@@ -22,7 +22,15 @@ class FileVersion:
 class LocalFileStore:
     def read(self, path: str) -> FileVersion:
         p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(path)
         return FileVersion(p.read_bytes(), None)
+
+    def write_new(self, path: str, content: bytes, message: str) -> bytes:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(content)
+        return content
 
     def mutate(self, path: str, mutator: Callable[[bytes], bytes], message: str) -> bytes:
         p = Path(path)
@@ -52,10 +60,29 @@ class GitHubFileStore:
             params={"ref": self.branch},
             timeout=30,
         )
+        if response.status_code == 404:
+            raise FileNotFoundError(path)
         response.raise_for_status()
         payload = response.json()
         content = base64.b64decode(payload["content"])
         return FileVersion(content=content, version=payload["sha"])
+
+    def write_new(self, path: str, content: bytes, message: str) -> bytes:
+        payload = {
+            "message": message,
+            "content": base64.b64encode(content).decode("ascii"),
+            "branch": self.branch,
+        }
+        response = requests.put(
+            f"{self.base_url}/{path}",
+            headers=self.headers,
+            json=payload,
+            timeout=60,
+        )
+        if response.status_code == 422:
+            raise StorageConflict(f"El archivo {path} ya existe en GitHub.")
+        response.raise_for_status()
+        return content
 
     def mutate(self, path: str, mutator: Callable[[bytes], bytes], message: str) -> bytes:
         last_error: Exception | None = None
