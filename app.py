@@ -36,6 +36,34 @@ store, storage_mode = build_store(secret_dict())
 st.title("Control de documentación faltante")
 st.caption(f"Prototipo 0.1 · almacenamiento: {storage_mode}")
 
+# Inicialización: permite cargar los dos Excel originales una sola vez desde la interfaz.
+missing = []
+for path in (DATA_FILE, CATALOG_FILE):
+    try:
+        store.read(path)
+    except FileNotFoundError:
+        missing.append(path)
+    except Exception as exc:
+        st.error(f"No fue posible consultar {path}: {exc}")
+        st.stop()
+
+if missing:
+    st.subheader("Inicializar archivos del prototipo")
+    st.info("Los archivos Excel todavía no están guardados en el almacenamiento del prototipo. Cárguelos una sola vez; la aplicación los conservará y trabajará sobre ellos.")
+    op_upload = st.file_uploader("Excel de documentación faltante", type=["xlsx"], key="op")
+    cat_upload = st.file_uploader("Excel de codificación de documentos", type=["xlsx"], key="cat")
+    if st.button("Inicializar prototipo", type="primary", disabled=not (op_upload and cat_upload)):
+        try:
+            if DATA_FILE in missing:
+                store.write_new(DATA_FILE, op_upload.getvalue(), "Inicializar Excel operativo")
+            if CATALOG_FILE in missing:
+                store.write_new(CATALOG_FILE, cat_upload.getvalue(), "Inicializar catálogo de codificación")
+            st.success("Archivos inicializados correctamente.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"No fue posible inicializar los archivos: {exc}")
+    st.stop()
+
 section = st.sidebar.radio("Menú", ["📋 Capturar faltantes", "✂️ Cortes", "📄 Generar oficio"])
 user_name = st.sidebar.text_input("Usuario / iniciales", value="")
 
