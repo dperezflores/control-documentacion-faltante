@@ -96,25 +96,50 @@ def get_faltantes(data: bytes, requirement: str, contract: str) -> list[dict]:
     return result
 
 
+def document_history(data: bytes, requirement: str, contract: str) -> dict[str, dict]:
+    """Resumen por código: cortes históricos y si ya está pendiente del siguiente corte."""
+    history: dict[str, dict] = {}
+    for row in get_faltantes(data, requirement, contract):
+        code = str(row.get("Codigo_documento") or "")
+        if not code:
+            continue
+        entry = history.setdefault(code, {"cuts": [], "pending": False, "documento": row.get("Documento")})
+        cut = row.get("Corte")
+        if str(cut) == "PENDIENTE":
+            entry["pending"] = True
+        else:
+            try:
+                cut_num = int(cut)
+                if cut_num not in entry["cuts"]:
+                    entry["cuts"].append(cut_num)
+            except (TypeError, ValueError):
+                pass
+    for entry in history.values():
+        entry["cuts"].sort()
+    return history
+
+
 def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, auditor: str, selected: Iterable[dict]) -> bytes:
+    """Agrega una nueva solicitud. Un documento histórico puede repetirse; uno ya PENDIENTE no."""
     wb = _load(data)
     _ensure_technical_sheets(wb)
     tech = wb[FALTANTES_SHEET]
 
-    existing = set()
+    pending_codes = set()
     for r in range(2, tech.max_row + 1):
         if tech.cell(r, 2).value == requirement and tech.cell(r, 3).value == contract:
-            existing.add(str(tech.cell(r, 5).value))
+            if str(tech.cell(r, 9).value) == "PENDIENTE":
+                pending_codes.add(str(tech.cell(r, 5).value))
 
     now = datetime.now().replace(microsecond=0)
     for item in selected:
-        if item["codigo"] in existing:
+        if item["codigo"] in pending_codes:
             continue
         tech.append([
             uuid4().hex, requirement, contract, procedure, item["codigo"], item["documento"],
             now, auditor, "PENDIENTE"
         ])
-        existing.add(item["codigo"])
+        pending_codes.add(item["codigo"])
 
     visible_ws = wb[requirement]
     target_row = None
@@ -125,11 +150,12 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
     if target_row is None:
         raise ValueError("No se encontró el contrato en la hoja seleccionada.")
 
+    # La celda visible conserva una lista única; el historial técnico sí conserva reiteraciones.
     docs = []
     for r in range(2, tech.max_row + 1):
         if tech.cell(r, 2).value == requirement and tech.cell(r, 3).value == contract:
             doc = tech.cell(r, 6).value
-            if doc and doc not in docs:
+            if doc and str(doc) not in docs:
                 docs.append(str(doc))
     visible_ws.cell(target_row, 5).value = "\n".join(docs)
     return _save(wb)
