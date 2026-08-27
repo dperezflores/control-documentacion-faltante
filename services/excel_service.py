@@ -5,6 +5,7 @@ from hashlib import sha1
 from io import BytesIO
 from typing import Iterable
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
 
@@ -18,6 +19,7 @@ FALTANTES_HEADERS = [
 ]
 CORTES_HEADERS = ["ID", "Requerimiento", "Corte", "Fecha", "Creado_por", "Documentos"]
 OFICIOS_HEADERS = ["ID", "Requerimiento", "Fecha", "Cortes", "Referencia", "Creado_por"]
+LOCAL_TZ = ZoneInfo("America/Mexico_City")
 
 
 def _load(data: bytes):
@@ -189,7 +191,7 @@ def _append_manual_to_tech(wb, requirement: str, manual_row: dict, cut_value) ->
         "Codigo_documento": f"MANUAL_{manual_row['id'].split('::')[-1]}",
         "Documento": manual_row["solicitud"],
         "Especificacion": "",
-        "Fecha_deteccion": datetime.now().replace(microsecond=0),
+        "Fecha_deteccion": datetime.now(LOCAL_TZ).replace(tzinfo=None, microsecond=0),
         "Auditor": manual_row.get("auditor") or "",
         "Corte": cut_value,
     }
@@ -311,7 +313,7 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
             if str(tech.cell(r, h["Corte"]).value) == "PENDIENTE":
                 pending_codes.add(str(tech.cell(r, h["Codigo_documento"]).value))
 
-    now = datetime.now().replace(microsecond=0)
+    now = datetime.now(LOCAL_TZ).replace(tzinfo=None, microsecond=0)
     for item in selected:
         if item["codigo"] in pending_codes:
             continue
