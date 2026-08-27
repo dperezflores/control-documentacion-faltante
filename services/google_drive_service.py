@@ -7,8 +7,6 @@ from typing import Callable
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import service_account
 
-from services.github_service import build_store as build_fallback_store
-
 
 class StorageConflict(RuntimeError):
     pass
@@ -159,25 +157,18 @@ def _plain_dict(value) -> dict:
         return dict(value)
 
 
-def build_store(secrets: dict | None = None):
-    secrets = secrets or {}
-
+def build_google_drive_store(secrets: dict):
     data_id = secrets.get("GOOGLE_DRIVE_DATA_FILE_ID")
     catalog_id = secrets.get("GOOGLE_DRIVE_CATALOG_FILE_ID")
     service_info = secrets.get("google_service_account")
+    if not (data_id and catalog_id and service_info):
+        return None
 
-    if data_id and catalog_id and service_info:
-        file_ids = {
-            "data/Documentacion_faltante.xlsx": str(data_id),
-            "data/Codificacion_documentos.xlsx": str(catalog_id),
-        }
-        return (
-            GoogleDriveFileStore(
-                service_account_info=_plain_dict(service_info),
-                file_ids=file_ids,
-            ),
-            "Google Drive",
-        )
-
-    # Conserva el modo anterior como respaldo para desarrollo/local.
-    return build_fallback_store(secrets)
+    file_ids = {
+        "data/Documentacion_faltante.xlsx": str(data_id),
+        "data/Codificacion_documentos.xlsx": str(catalog_id),
+    }
+    return GoogleDriveFileStore(
+        service_account_info=_plain_dict(service_info),
+        file_ids=file_ids,
+    )
