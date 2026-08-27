@@ -130,13 +130,31 @@ CUSTOM_CSS = """
         background: var(--inst-orange);
     }
     [data-testid="stSidebar"] .stButton > button {
-        border: 1px solid rgba(255,255,255,.28);
-        background: rgba(255,255,255,.08);
-        color: #FFFFFF;
+        border: 1px solid #FFBAA3;
+        background: #FFFFFF;
+        color: #00304F !important;
+    }
+    [data-testid="stSidebar"] .stButton > button * {
+        color: #00304F !important;
     }
     [data-testid="stSidebar"] .stButton > button:hover {
-        background: rgba(255,255,255,.16);
-        border-color: rgba(255,255,255,.42);
+        background: #FFF3EE;
+        border-color: #FF7D42;
+        color: #FF5E12 !important;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover * {
+        color: #FF5E12 !important;
+    }
+
+    /* Ocultar controles de Streamlit Cloud que exponen código/repositorio */
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    #MainMenu,
+    header[data-testid="stHeader"] {
+        visibility: hidden !important;
+        height: 0 !important;
+        min-height: 0 !important;
     }
 
     /* Controles */
