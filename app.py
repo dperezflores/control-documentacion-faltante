@@ -33,32 +33,265 @@ LOCAL_TZ = ZoneInfo("America/Mexico_City")
 
 CUSTOM_CSS = """
 <style>
-    .stApp { background: #f6f7f9; }
-    .block-container { max-width: 1220px; padding-top: 2rem; padding-bottom: 3rem; }
-    h1 { color: #1f2937; font-size: 2rem !important; letter-spacing: -0.025em; margin-bottom: .25rem !important; }
-    h2, h3 { color: #27313d; letter-spacing: -0.015em; }
-    [data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e5e7eb; }
-    [data-testid="stSidebar"] .stRadio > label { font-weight: 700; }
+    :root {
+        --inst-orange: #FF5E12;
+        --inst-orange-2: #FF7D42;
+        --inst-charcoal: #362D32;
+        --inst-peach: #FFBAA3;
+        --inst-navy: #00304F;
+        --inst-gray: #D6D6D6;
+        --inst-bg: #F7F8FA;
+        --inst-white: #FFFFFF;
+    }
+
+    .stApp {
+        background: var(--inst-bg);
+        color: var(--inst-charcoal);
+    }
+
+    .block-container {
+        max-width: 1280px;
+        padding-top: 1.6rem;
+        padding-bottom: 3rem;
+    }
+
+    /* Encabezado institucional */
+    .institutional-header {
+        background: var(--inst-white);
+        border: 1px solid #E7E8EB;
+        border-top: 5px solid var(--inst-orange);
+        border-radius: 14px;
+        padding: 22px 26px 20px 26px;
+        margin: 0 0 24px 0;
+        box-shadow: 0 5px 18px rgba(0, 48, 79, .06);
+    }
+    .institutional-eyebrow {
+        color: var(--inst-orange);
+        font-size: .76rem;
+        font-weight: 800;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+    .institutional-title {
+        color: var(--inst-navy);
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -.025em;
+        line-height: 1.15;
+        margin: 0;
+    }
+    .institutional-subtitle {
+        color: #66727A;
+        font-size: .94rem;
+        margin-top: 7px;
+    }
+
+    h1, h2, h3, h4 {
+        color: var(--inst-navy);
+        letter-spacing: -.015em;
+    }
+    h2 {
+        margin-top: 1.35rem !important;
+    }
+    p, label, span {
+        color: inherit;
+    }
+
+    /* Sidebar */
+    [data-testid="stSidebar"] {
+        background: var(--inst-navy);
+        border-right: 0;
+    }
+    [data-testid="stSidebar"] > div {
+        background: var(--inst-navy);
+    }
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF;
+    }
+    [data-testid="stSidebar"] hr {
+        border-color: rgba(255,255,255,.18);
+    }
+    [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+        color: rgba(255,255,255,.76);
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] {
+        gap: 6px;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label {
+        border-radius: 9px;
+        padding: 8px 10px;
+        transition: background .15s ease;
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+        background: rgba(255,255,255,.10);
+    }
+    [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+        background: var(--inst-orange);
+    }
+    [data-testid="stSidebar"] .stButton > button {
+        border: 1px solid rgba(255,255,255,.28);
+        background: rgba(255,255,255,.08);
+        color: #FFFFFF;
+    }
+    [data-testid="stSidebar"] .stButton > button:hover {
+        background: rgba(255,255,255,.16);
+        border-color: rgba(255,255,255,.42);
+    }
+
+    /* Controles */
+    [data-baseweb="select"] > div,
+    .stTextInput input,
+    .stDateInput input,
+    .stTextArea textarea {
+        background: var(--inst-white) !important;
+        border-color: #DDE2E6 !important;
+        border-radius: 10px !important;
+        color: var(--inst-charcoal) !important;
+        min-height: 42px;
+    }
+    [data-baseweb="select"]:focus-within > div,
+    .stTextInput:focus-within input,
+    .stDateInput:focus-within input,
+    .stTextArea:focus-within textarea {
+        border-color: var(--inst-orange) !important;
+        box-shadow: 0 0 0 2px rgba(255,94,18,.10) !important;
+    }
+
+    /* Botones */
+    .stButton > button,
+    .stDownloadButton > button {
+        border-radius: 9px;
+        font-weight: 700;
+        white-space: nowrap;
+        min-height: 40px;
+        transition: all .15s ease;
+    }
+    .stButton > button:hover,
+    .stDownloadButton > button:hover {
+        transform: translateY(-1px);
+    }
+    .stButton > button[kind="primary"],
+    .stDownloadButton > button[kind="primary"] {
+        background: var(--inst-orange);
+        border-color: var(--inst-orange);
+        color: #FFFFFF;
+        box-shadow: 0 4px 10px rgba(255,94,18,.18);
+    }
+    .stButton > button[kind="primary"]:hover,
+    .stDownloadButton > button[kind="primary"]:hover {
+        background: #E94F08;
+        border-color: #E94F08;
+    }
+    .stButton > button:not([kind="primary"]) {
+        background: var(--inst-white);
+        border-color: #CBD2D8;
+        color: var(--inst-navy);
+    }
+    .stButton > button:not([kind="primary"]):hover {
+        border-color: var(--inst-orange);
+        color: var(--inst-orange);
+        background: #FFF7F3;
+    }
+
+    /* Tarjetas y métricas */
     div[data-testid="stMetric"] {
-        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px;
-        box-shadow: 0 1px 2px rgba(0,0,0,.025);
+        background: var(--inst-white);
+        border: 1px solid #E2E5E8;
+        border-top: 4px solid var(--inst-orange);
+        border-radius: 12px;
+        padding: 15px 17px;
+        box-shadow: 0 4px 14px rgba(0,48,79,.05);
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: var(--inst-navy);
+        font-weight: 800;
     }
     div[data-testid="stExpander"] {
-        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
+        background: var(--inst-white);
+        border: 1px solid #E1E5E8;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 3px 12px rgba(0,48,79,.04);
     }
+    div[data-testid="stExpander"] details summary:hover {
+        background: #FFF7F3;
+    }
+
     .info-card {
-        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
-        padding: 18px 20px; margin: 8px 0 18px 0;
-        box-shadow: 0 1px 2px rgba(0,0,0,.025);
+        background: var(--inst-white);
+        border: 1px solid #E2E5E8;
+        border-left: 5px solid var(--inst-orange-2);
+        border-radius: 12px;
+        padding: 18px 21px;
+        margin: 8px 0 20px 0;
+        box-shadow: 0 4px 14px rgba(0,48,79,.05);
     }
-    .info-label { color: #6b7280; font-size: .76rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
-    .info-value { color: #25282c; font-size: .98rem; margin: 3px 0 10px 0; }
-    .section-kicker { color: #6b7280; font-size: .88rem; margin-bottom: 1rem; }
+    .info-label {
+        color: var(--inst-orange);
+        font-size: .72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .075em;
+    }
+    .info-value {
+        color: var(--inst-charcoal);
+        font-size: .98rem;
+        font-weight: 560;
+        margin: 3px 0 11px 0;
+    }
     .subtle-box {
-        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
+        background: var(--inst-white);
+        border: 1px solid #E2E5E8;
+        border-radius: 10px;
+        padding: 14px 16px;
+        margin-bottom: 12px;
     }
-    .stButton > button { border-radius: 8px; font-weight: 650; white-space: nowrap; }
-    .stButton > button[kind="primary"] { font-weight: 700; }
+
+    /* Tablas y separadores */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #E2E5E8;
+        border-radius: 10px;
+        overflow: hidden;
+        background: var(--inst-white);
+    }
+    hr {
+        border: 0;
+        border-top: 1px solid #E0E4E7;
+        margin: 1.25rem 0;
+    }
+
+    /* Mensajes */
+    [data-testid="stAlert"] {
+        border-radius: 10px;
+    }
+    [data-testid="stAlert"][data-baseweb="notification"] {
+        border-left-width: 4px;
+    }
+
+    /* Etiquetas y captions */
+    .section-kicker {
+        color: #6B747B;
+        font-size: .88rem;
+        margin-bottom: 1rem;
+    }
+    .stCaptionContainer {
+        color: #7A8288;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+        .institutional-header {
+            padding: 18px;
+        }
+        .institutional-title {
+            font-size: 1.65rem;
+        }
+    }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -101,9 +334,16 @@ def persist(mutator, message: str) -> bytes:
     return updated
 
 
-st.title("Control de documentación faltante")
 st.markdown(
-    '<div class="section-kicker">Registro homologado de faltantes, administración de cortes y preparación de solicitudes.</div>',
+    """
+    <div class="institutional-header">
+        <div class="institutional-eyebrow">Control documental</div>
+        <div class="institutional-title">Documentación faltante</div>
+        <div class="institutional-subtitle">
+            Registro homologado de faltantes, administración de cortes y preparación de solicitudes.
+        </div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
