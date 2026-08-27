@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha1
 from io import BytesIO
 from typing import Iterable
 from uuid import uuid4
@@ -72,67 +73,129 @@ def _split_visible_documents(value) -> list[str]:
     return [line.strip(" •\t") for line in text.split("\n") if line.strip(" •\t")]
 
 
-def manual_visible_documents(data: bytes, requirement: str, contract: str) -> list[str]:
-    """Devuelve textos visibles que no tienen registro técnico en _APP_FALTANTES."""
-    wb = _load(data)
+def _manual_id(requirement: str, contract: str, text: str) -> str:
+    digest = sha1(f"{requirement}|{contract}|{text}".encode("utf-8")).hexdigest()[:16]
+    return f"MANUAL::{digest}"
+
+
+def _manual_pending_rows_from_wb(wb, requirement: str) -> list[dict]:
     _ensure_technical_sheets(wb)
     visible_ws = wb[requirement]
-    visible_value = ""
-    for r in range(8, visible_ws.max_row + 1):
-        if str(visible_ws.cell(r, 2).value or "").strip() == contract:
-            visible_value = visible_ws.cell(r, 5).value or ""
-            break
-
     tech = wb[FALTANTES_SHEET]
     h = _headers(tech)
-    technical_docs = set()
+
+    technical_by_contract: dict[str, set[str]] = {}
+    for r in range(2, tech.max_row + 1):
+        if tech.cell(r, h["Requerimiento"]).value != requirement:
+            continue
+        contract = str(tech.cell(r, h["Contrato"]).value or "").strip()
+        technical_by_contract.setdefault(contract, set()).add(
+            _effective_document(
+                tech.cell(r, h["Documento"]).value,
+                tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
+            )
+        )
+
+    result = []
+    for r in range(8, visible_ws.max_row + 1):
+        contract = str(visible_ws.cell(r, 2).value or "").strip()
+        if not contract:
+            continue
+        auditor = str(visible_ws.cell(r, 6).value or "").strip()
+        visible_docs = _split_visible_documents(visible_ws.cell(r, 5).value or "")
+        technical_docs = technical_by_contract.get(contract, set())
+        for text in visible_docs:
+            if text in technical_docs:
+                continue
+            result.append({
+                "id": _manual_id(requirement, contract, text),
+                "contrato": contract,
+                "codigo": "",
+                "documento": text,
+                "especificacion": "",
+                "solicitud": text,
+                "fecha": None,
+                "auditor": auditor,
+                "origen": "Registro previo / manual",
+                "_manual_text": text,
+            })
+    return result
+
+
+def manual_visible_documents(data: bytes, requirement: str, contract: str) -> list[str]:
+    wb = _load(data)
+    return [
+        row["solicitud"]
+        for row in _manual_pending_rows_from_wb(wb, requirement)
+        if row["contrato"] == contract
+    ]
+
+
+def _technical_docs_for_contract(wb, requirement: str, contract: str) -> list[str]:
+    tech = wb[FALTANTES_SHEET]
+    h = _headers(tech)
+    docs: list[str] = []
     for r in range(2, tech.max_row + 1):
         if (
             tech.cell(r, h["Requerimiento"]).value == requirement
             and str(tech.cell(r, h["Contrato"]).value or "").strip() == contract
         ):
-            technical_docs.add(
-                _effective_document(
-                    tech.cell(r, h["Documento"]).value,
-                    tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
-                )
-            )
-
-    return [x for x in _split_visible_documents(visible_value) if x not in technical_docs]
-
-
-
-def _rebuild_visible_cell(wb, requirement: str, contract: str) -> None:
-    tech = wb[FALTANTES_SHEET]
-    h = _headers(tech)
-    technical_docs: list[str] = []
-    for r in range(2, tech.max_row + 1):
-        if tech.cell(r, h["Requerimiento"]).value == requirement and str(tech.cell(r, h["Contrato"]).value or "").strip() == contract:
             text = _effective_document(
                 tech.cell(r, h["Documento"]).value,
                 tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
             )
-            if text and text not in technical_docs:
-                technical_docs.append(text)
+            if text and text not in docs:
+                docs.append(text)
+    return docs
 
+
+def _write_visible_cell(wb, requirement: str, contract: str, manual_docs: list[str]) -> None:
     visible_ws = wb[requirement]
     target_row = None
-    current_visible = ""
     for r in range(8, visible_ws.max_row + 1):
         if str(visible_ws.cell(r, 2).value or "").strip() == contract:
             target_row = r
-            current_visible = visible_ws.cell(r, 5).value or ""
             break
     if target_row is None:
         raise ValueError("No se encontró el contrato en la hoja seleccionada.")
 
-    # Conserva textos capturados manualmente antes o fuera de la aplicación.
-    manual_docs = [
-        x for x in _split_visible_documents(current_visible)
-        if x not in set(technical_docs)
-    ]
-    combined = manual_docs + [x for x in technical_docs if x not in manual_docs]
+    technical_docs = _technical_docs_for_contract(wb, requirement, contract)
+    combined = list(dict.fromkeys([*manual_docs, *technical_docs]))
     visible_ws.cell(target_row, 5).value = "\n".join(combined)
+
+
+def _rebuild_visible_cell(wb, requirement: str, contract: str) -> None:
+    visible_ws = wb[requirement]
+    current_visible = ""
+    for r in range(8, visible_ws.max_row + 1):
+        if str(visible_ws.cell(r, 2).value or "").strip() == contract:
+            current_visible = visible_ws.cell(r, 5).value or ""
+            break
+
+    technical_docs = set(_technical_docs_for_contract(wb, requirement, contract))
+    manual_docs = [x for x in _split_visible_documents(current_visible) if x not in technical_docs]
+    _write_visible_cell(wb, requirement, contract, manual_docs)
+
+
+def _append_manual_to_tech(wb, requirement: str, manual_row: dict, cut_value) -> None:
+    tech = wb[FALTANTES_SHEET]
+    h = _headers(tech)
+    row = [None] * tech.max_column
+    values = {
+        "ID": uuid4().hex,
+        "Requerimiento": requirement,
+        "Contrato": manual_row["contrato"],
+        "Procedimiento": "MANUAL",
+        "Codigo_documento": f"MANUAL_{manual_row['id'].split('::')[-1]}",
+        "Documento": manual_row["solicitud"],
+        "Especificacion": "",
+        "Fecha_deteccion": datetime.now().replace(microsecond=0),
+        "Auditor": manual_row.get("auditor") or "",
+        "Corte": cut_value,
+    }
+    for name, value in values.items():
+        row[h[name] - 1] = value
+    tech.append(row)
 
 
 def _update_cut_count(wb, requirement: str, cut_number: int) -> None:
@@ -275,19 +338,32 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
 
 
 def pending_summary(data: bytes, requirement: str) -> list[dict]:
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    tech = wb[FALTANTES_SHEET]
+    h = _headers(tech)
     result = []
-    for row in get_faltantes(data, requirement):
-        if str(row.get("Corte")) == "PENDIENTE":
-            result.append({
-                "id": row.get("ID"),
-                "contrato": row.get("Contrato"),
-                "codigo": row.get("Codigo_documento"),
-                "documento": row.get("Documento"),
-                "especificacion": row.get("Especificacion") or "",
-                "solicitud": row.get("Documento_efectivo"),
-                "fecha": row.get("Fecha_deteccion"),
-                "auditor": row.get("Auditor"),
-            })
+
+    for r in range(2, tech.max_row + 1):
+        if tech.cell(r, h["Requerimiento"]).value != requirement:
+            continue
+        if str(tech.cell(r, h["Corte"]).value) != "PENDIENTE":
+            continue
+        documento = tech.cell(r, h["Documento"]).value
+        especificacion = tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else ""
+        result.append({
+            "id": tech.cell(r, h["ID"]).value,
+            "contrato": tech.cell(r, h["Contrato"]).value,
+            "codigo": tech.cell(r, h["Codigo_documento"]).value,
+            "documento": documento,
+            "especificacion": especificacion or "",
+            "solicitud": _effective_document(documento, especificacion),
+            "fecha": tech.cell(r, h["Fecha_deteccion"]).value,
+            "auditor": tech.cell(r, h["Auditor"]).value,
+            "origen": "Aplicación",
+        })
+
+    result.extend(_manual_pending_rows_from_wb(wb, requirement))
     return result
 
 
@@ -345,18 +421,31 @@ def create_cut(data: bytes, requirement: str, user: str, cut_date) -> bytes:
         if cuts.cell(r, ch["Requerimiento"]).value == requirement and cuts.cell(r, ch["Corte"]).value
     ]
     next_cut = max(existing, default=0) + 1
-    affected = 0
+
+    manual_rows = _manual_pending_rows_from_wb(wb, requirement)
+    for manual_row in manual_rows:
+        _append_manual_to_tech(wb, requirement, manual_row, next_cut)
+
+    affected = len(manual_rows)
     for r in range(2, falt.max_row + 1):
-        if falt.cell(r, fh["Requerimiento"]).value == requirement and str(falt.cell(r, fh["Corte"]).value) == "PENDIENTE":
+        if (
+            falt.cell(r, fh["Requerimiento"]).value == requirement
+            and str(falt.cell(r, fh["Corte"]).value) == "PENDIENTE"
+        ):
             falt.cell(r, fh["Corte"]).value = next_cut
             affected += 1
+
     if affected == 0:
         raise ValueError("No hay documentación pendiente para crear un corte.")
 
     row = [None] * cuts.max_column
     values = {
-        "ID": uuid4().hex, "Requerimiento": requirement, "Corte": next_cut,
-        "Fecha": cut_date, "Creado_por": user, "Documentos": affected,
+        "ID": uuid4().hex,
+        "Requerimiento": requirement,
+        "Corte": next_cut,
+        "Fecha": cut_date,
+        "Creado_por": user,
+        "Documentos": affected,
     }
     for name, value in values.items():
         row[ch[name] - 1] = value
@@ -368,10 +457,27 @@ def delete_pending_records(data: bytes, requirement: str, record_ids: Iterable[s
     ids = {str(x) for x in record_ids}
     if not ids:
         return data
+
     wb = _load(data)
     _ensure_technical_sheets(wb)
     ws = wb[FALTANTES_SHEET]
     h = _headers(ws)
+
+    manual_rows = {row["id"]: row for row in _manual_pending_rows_from_wb(wb, requirement)}
+    manual_by_contract: dict[str, list[str]] = {}
+    for row in manual_rows.values():
+        manual_by_contract.setdefault(row["contrato"], []).append(row["solicitud"])
+
+    # Eliminar registros manuales seleccionados de la celda visible.
+    for record_id in ids:
+        manual = manual_rows.get(record_id)
+        if manual:
+            contract = manual["contrato"]
+            manual_by_contract[contract] = [
+                x for x in manual_by_contract.get(contract, [])
+                if x != manual["solicitud"]
+            ]
+
     affected_contracts: set[str] = set()
     rows_to_delete = []
     for r in range(2, ws.max_row + 1):
@@ -380,12 +486,23 @@ def delete_pending_records(data: bytes, requirement: str, record_ids: Iterable[s
             and str(ws.cell(r, h["ID"]).value) in ids
             and str(ws.cell(r, h["Corte"]).value) == "PENDIENTE"
         ):
-            affected_contracts.add(str(ws.cell(r, h["Contrato"]).value or "").strip())
+            contract = str(ws.cell(r, h["Contrato"]).value or "").strip()
+            affected_contracts.add(contract)
             rows_to_delete.append(r)
+
     for r in reversed(rows_to_delete):
         ws.delete_rows(r, 1)
+
+    affected_contracts.update(
+        manual_rows[x]["contrato"] for x in ids if x in manual_rows
+    )
     for contract in affected_contracts:
-        _rebuild_visible_cell(wb, requirement, contract)
+        _write_visible_cell(
+            wb,
+            requirement,
+            contract,
+            manual_by_contract.get(contract, []),
+        )
     return _save(wb)
 
 
@@ -395,13 +512,27 @@ def move_records_to_cut(data: bytes, requirement: str, record_ids: Iterable[str]
     _ensure_technical_sheets(wb)
     falt = wb[FALTANTES_SHEET]
     fh = _headers(falt)
-    changed = 0
+
+    manual_rows = {
+        row["id"]: row
+        for row in _manual_pending_rows_from_wb(wb, requirement)
+        if row["id"] in ids
+    }
+    for manual_row in manual_rows.values():
+        _append_manual_to_tech(wb, requirement, manual_row, int(cut_number))
+
+    changed = len(manual_rows)
     for r in range(2, falt.max_row + 1):
-        if falt.cell(r, fh["Requerimiento"]).value == requirement and str(falt.cell(r, fh["ID"]).value) in ids:
+        if (
+            falt.cell(r, fh["Requerimiento"]).value == requirement
+            and str(falt.cell(r, fh["ID"]).value) in ids
+        ):
             falt.cell(r, fh["Corte"]).value = int(cut_number)
             changed += 1
+
     if changed == 0:
         raise ValueError("No se encontraron registros para agregar al corte.")
+
     _update_cut_count(wb, requirement, cut_number)
     return _save(wb)
 
