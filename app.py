@@ -7,13 +7,18 @@ import streamlit as st
 from services.excel_service import (
     add_faltantes,
     create_cut,
+    cut_details,
+    delete_cut,
+    delete_pending_records,
     document_history,
     documents_for_cuts,
     list_contracts,
     list_cuts,
     list_requirements,
     load_catalog,
+    move_records_to_cut,
     pending_summary,
+    remove_records_from_cut,
 )
 from services.github_service import build_store
 from services.word_service import build_request_docx
@@ -25,37 +30,32 @@ CATALOG_FILE = "data/Codificacion_documentos.xlsx"
 
 CUSTOM_CSS = """
 <style>
-    .stApp { background: #f7f8fa; }
-    .block-container { max-width: 1180px; padding-top: 2.2rem; padding-bottom: 3rem; }
-    h1 { color: #202124; font-size: 2rem !important; letter-spacing: -0.02em; margin-bottom: .25rem !important; }
-    h2, h3 { color: #2f3337; letter-spacing: -0.01em; }
-    [data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e7e9ed; }
+    .stApp { background: #f6f7f9; }
+    .block-container { max-width: 1220px; padding-top: 2rem; padding-bottom: 3rem; }
+    h1 { color: #1f2937; font-size: 2rem !important; letter-spacing: -0.025em; margin-bottom: .25rem !important; }
+    h2, h3 { color: #27313d; letter-spacing: -0.015em; }
+    [data-testid="stSidebar"] { background: #ffffff; border-right: 1px solid #e5e7eb; }
     [data-testid="stSidebar"] .stRadio > label { font-weight: 700; }
-    div[data-testid="stSelectbox"], div[data-testid="stMultiSelect"], div[data-testid="stTextInput"] {
-        margin-bottom: .25rem;
-    }
     div[data-testid="stMetric"] {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
-        padding: 14px 16px;
+        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px;
+        box-shadow: 0 1px 2px rgba(0,0,0,.025);
     }
     div[data-testid="stExpander"] {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 10px;
+        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
     }
     .info-card {
-        background: #ffffff;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 18px 20px;
-        margin: 8px 0 18px 0;
+        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px;
+        padding: 18px 20px; margin: 8px 0 18px 0;
+        box-shadow: 0 1px 2px rgba(0,0,0,.025);
     }
-    .info-label { color: #6b7280; font-size: .78rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .info-label { color: #6b7280; font-size: .76rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
     .info-value { color: #25282c; font-size: .98rem; margin: 3px 0 10px 0; }
-    .section-kicker { color: #6b7280; font-size: .86rem; margin-bottom: 1rem; }
-    .stButton > button[kind="primary"] { border-radius: 8px; font-weight: 700; }
+    .section-kicker { color: #6b7280; font-size: .88rem; margin-bottom: 1rem; }
+    .subtle-box {
+        background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
+    }
+    .stButton > button { border-radius: 8px; font-weight: 650; }
+    .stButton > button[kind="primary"] { font-weight: 700; }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -72,7 +72,6 @@ store, storage_mode = build_store(secret_dict())
 
 
 def load_session_files(force: bool = False) -> tuple[bytes, bytes] | None:
-    """Carga desde GitHub sólo al iniciar sesión o cuando el usuario pide actualizar."""
     if force:
         st.session_state.pop("operational_bytes", None)
         st.session_state.pop("catalog_bytes", None)
@@ -93,13 +92,22 @@ def load_session_files(force: bool = False) -> tuple[bytes, bytes] | None:
         st.stop()
 
 
+def persist(mutator, message: str) -> bytes:
+    updated = store.mutate(DATA_FILE, mutator, message)
+    st.session_state.operational_bytes = updated
+    return updated
+
+
 st.title("Control de documentación faltante")
-st.markdown('<div class="section-kicker">Registro homologado de faltantes, control de cortes y preparación de solicitudes.</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="section-kicker">Registro homologado de faltantes, administración de cortes y preparación de solicitudes.</div>',
+    unsafe_allow_html=True,
+)
 
 loaded = load_session_files()
 if loaded is None:
     st.subheader("Inicializar archivos del prototipo")
-    st.info("Carga una sola vez el Excel de documentación faltante y el Excel de codificación. A partir de ese momento la aplicación trabajará sobre los archivos guardados en GitHub.")
+    st.info("Carga una sola vez el Excel de documentación faltante y el Excel de codificación.")
     op_upload = st.file_uploader("Excel de documentación faltante", type=["xlsx"], key="op")
     cat_upload = st.file_uploader("Excel de codificación de documentos", type=["xlsx"], key="cat")
     if st.button("Inicializar prototipo", type="primary", disabled=not (op_upload and cat_upload)):
@@ -128,7 +136,7 @@ st.sidebar.divider()
 st.sidebar.caption(f"Almacenamiento: {storage_mode}")
 if st.sidebar.button("Actualizar datos"):
     with st.spinner("Actualizando información..."):
-        operational, catalog_bytes = load_session_files(force=True)
+        load_session_files(force=True)
     st.rerun()
 
 requirements = list_requirements(operational)
@@ -148,7 +156,9 @@ if section == "Capturar faltantes":
     f1, f2 = st.columns([1, 2.4])
     with f1:
         auditor_filter = st.selectbox("Auditor", ["Todos"] + auditors)
-    filtered_contracts = contracts if auditor_filter == "Todos" else [c for c in contracts if str(c["auditor"]).strip() == auditor_filter]
+    filtered_contracts = contracts if auditor_filter == "Todos" else [
+        c for c in contracts if str(c["auditor"]).strip() == auditor_filter
+    ]
 
     with f2:
         labels = {f"{c['contrato']} · {str(c['obra'])[:78]}": c for c in filtered_contracts}
@@ -181,10 +191,8 @@ if section == "Capturar faltantes":
 
     catalog = load_catalog(catalog_bytes, procedure)
     history = document_history(operational, requirement, contract["contrato"])
-
-    # Los documentos que ya están pendientes no se duplican antes de crear un corte.
-    # Los históricos sí vuelven a mostrarse para permitir reiterarlos en un corte posterior.
     available = [x for x in catalog if not history.get(x["codigo"], {}).get("pending", False)]
+
     options = {}
     for item in available:
         prior_cuts = history.get(item["codigo"], {}).get("cuts", [])
@@ -194,9 +202,20 @@ if section == "Capturar faltantes":
         options[label] = item
 
     st.subheader("Documentación faltante")
-    st.caption("Selecciona uno o varios documentos del catálogo correspondiente al procedimiento.")
+    st.caption("Selecciona los documentos faltantes. Si necesitas pedir sólo una parte del documento catalogado, utiliza el campo de especificación.")
     selected_labels = st.multiselect("Documentos", list(options.keys()), placeholder="Seleccionar documentos")
-    selected_items = [options[x] for x in selected_labels]
+    selected_items = [dict(options[x]) for x in selected_labels]
+
+    if selected_items:
+        st.markdown("#### Especificación de la solicitud")
+        st.caption("Opcional. Si se deja vacío, se solicitará el nombre completo del documento del catálogo.")
+        for item in selected_items:
+            item["especificacion"] = st.text_input(
+                item["documento"],
+                key=f"spec_{requirement}_{contract['contrato']}_{item['codigo']}",
+                placeholder="Ej. Tarjetas de precios unitarios",
+                help="Escribe únicamente lo que deseas solicitar cuando el concepto del catálogo sea más amplio.",
+            )
 
     repeated = []
     for item in selected_items:
@@ -206,24 +225,39 @@ if section == "Capturar faltantes":
 
     repeat_confirmed = True
     if repeated:
-        names = "; ".join(f"{item['documento']} (corte(s) {', '.join(map(str, cuts))})" for item, cuts in repeated)
-        st.warning(f"La selección incluye documentación ya solicitada anteriormente: {names}. Si no fue entregada, puedes volver a solicitarla en el siguiente corte.")
+        names = "; ".join(
+            f"{item['documento']} (corte(s) {', '.join(map(str, cuts))})"
+            for item, cuts in repeated
+        )
+        st.warning(
+            f"La selección incluye documentación ya solicitada anteriormente: {names}. "
+            "Si no fue entregada, puedes volver a solicitarla en el siguiente corte."
+        )
         repeat_confirmed = st.checkbox("Confirmo que deseo volver a agregar esta documentación para una nueva solicitud.")
 
     auditor_for_save = str(contract["auditor"] or "").strip()
     if not auditor_for_save:
-        auditor_for_save = st.text_input("Usuario / iniciales", help="Este contrato no tiene auditor asignado en el Excel. Indica quién registra los faltantes.").strip()
+        auditor_for_save = st.text_input(
+            "Usuario / iniciales",
+            help="Este contrato no tiene auditor asignado en el Excel. Indica quién registra los faltantes.",
+        ).strip()
 
-    if st.button("Guardar documentación faltante", type="primary", disabled=not selected_items or not repeat_confirmed):
+    if st.button(
+        "Guardar documentación faltante",
+        type="primary",
+        disabled=not selected_items or not repeat_confirmed,
+    ):
         if not auditor_for_save:
             st.error("Este contrato no tiene auditor asignado. Indica el usuario o iniciales para continuar.")
         else:
             def mutation(latest: bytes) -> bytes:
-                return add_faltantes(latest, requirement, contract["contrato"], procedure, auditor_for_save, selected_items)
+                return add_faltantes(
+                    latest, requirement, contract["contrato"], procedure,
+                    auditor_for_save, selected_items
+                )
 
             try:
-                updated = store.mutate(DATA_FILE, mutation, f"Registrar faltantes {requirement} · {contract['contrato']}")
-                st.session_state.operational_bytes = updated
+                persist(mutation, f"Registrar faltantes {requirement} · {contract['contrato']}")
                 st.success(f"Se registraron {len(selected_items)} documento(s) para el siguiente corte.")
                 st.rerun()
             except Exception as exc:
@@ -235,45 +269,194 @@ if section == "Capturar faltantes":
             rows = []
             catalog_by_code = {x["codigo"]: x["documento"] for x in catalog}
             for code, item in history.items():
-                status = "Pendiente de corte" if item.get("pending") else ""
+                status = "Pendiente de corte" if item.get("pending") else "Sin solicitud pendiente"
                 cuts = ", ".join(map(str, item.get("cuts", []))) or "—"
                 rows.append({
                     "Documento": item.get("documento") or catalog_by_code.get(code, code),
                     "Cortes anteriores": cuts,
-                    "Estado actual": status or "Sin solicitud pendiente",
+                    "Estado actual": status,
                 })
             st.dataframe(rows, use_container_width=True, hide_index=True)
 
 elif section == "Cortes":
-    pending = pending_summary(operational, requirement)
+    pending_all = pending_summary(operational, requirement)
     cuts = list_cuts(operational, requirement)
 
     m1, m2 = st.columns(2)
-    m1.metric("Pendientes de corte", len(pending))
+    m1.metric("Pendientes de corte", len(pending_all))
     m2.metric("Cortes existentes", len(cuts))
 
     if cuts:
-        st.subheader("Cortes registrados")
-        st.dataframe(cuts, use_container_width=True, hide_index=True)
+        st.subheader("Cortes existentes")
+        st.caption("Consulta el detalle de cada corte, agrega documentos pendientes, retira documentos o elimina un corte completo.")
+
+        for cut in cuts:
+            with st.expander(
+                f"Corte {cut['corte']} · {cut['fecha']} · {cut['documentos']} documento(s) · {cut['creado_por']}"
+            ):
+                details = cut_details(operational, requirement, cut["corte"])
+                if details:
+                    display_rows = [{
+                        "Contrato": x["contrato"],
+                        "Auditor": x["auditor"],
+                        "Solicitud": x["solicitud"],
+                        "Documento catálogo": x["documento"],
+                        "Especificación": x["especificacion"],
+                    } for x in details]
+                    st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+                    detail_options = {
+                        f"{x['contrato']} · {x['solicitud']}": x["id"] for x in details
+                    }
+                    to_remove = st.multiselect(
+                        "Retirar documentos de este corte",
+                        list(detail_options.keys()),
+                        key=f"remove_cut_{cut['corte']}",
+                        placeholder="Seleccionar documentos",
+                    )
+                    if st.button(
+                        "Retirar seleccionados del corte",
+                        key=f"remove_cut_btn_{cut['corte']}",
+                        disabled=not to_remove,
+                    ):
+                        ids = [detail_options[x] for x in to_remove]
+                        try:
+                            persist(
+                                lambda latest: remove_records_from_cut(
+                                    latest, requirement, ids, cut["corte"]
+                                ),
+                                f"Retirar documentos Corte {cut['corte']} · {requirement}",
+                            )
+                            st.success("Los documentos fueron retirados del corte y regresaron a documentación pendiente.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"No fue posible retirar los documentos: {exc}")
+                else:
+                    st.info("Este corte no contiene documentos.")
+
+                if pending_all:
+                    pending_options = {
+                        f"{x['contrato']} · {x['solicitud']} · {x['auditor']}": x["id"]
+                        for x in pending_all
+                    }
+                    to_add = st.multiselect(
+                        "Agregar documentación pendiente a este corte",
+                        list(pending_options.keys()),
+                        key=f"add_cut_{cut['corte']}",
+                        placeholder="Seleccionar documentos pendientes",
+                    )
+                    if st.button(
+                        "Agregar seleccionados al corte",
+                        key=f"add_cut_btn_{cut['corte']}",
+                        disabled=not to_add,
+                    ):
+                        ids = [pending_options[x] for x in to_add]
+                        try:
+                            persist(
+                                lambda latest: move_records_to_cut(
+                                    latest, requirement, ids, cut["corte"]
+                                ),
+                                f"Agregar documentos Corte {cut['corte']} · {requirement}",
+                            )
+                            st.success("Los documentos fueron agregados al corte.")
+                            st.rerun()
+                        except Exception as exc:
+                            st.error(f"No fue posible agregar los documentos: {exc}")
+
+                st.divider()
+                confirm_delete = st.checkbox(
+                    f"Confirmo que deseo eliminar el Corte {cut['corte']}. Sus documentos regresarán a pendientes.",
+                    key=f"confirm_delete_cut_{cut['corte']}",
+                )
+                if st.button(
+                    f"Eliminar Corte {cut['corte']}",
+                    key=f"delete_cut_{cut['corte']}",
+                    disabled=not confirm_delete,
+                ):
+                    try:
+                        persist(
+                            lambda latest: delete_cut(latest, requirement, cut["corte"]),
+                            f"Eliminar Corte {cut['corte']} · {requirement}",
+                        )
+                        st.success(f"El Corte {cut['corte']} fue eliminado. Sus documentos regresaron a pendientes.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"No fue posible eliminar el corte: {exc}")
+    else:
+        st.info("Todavía no existen cortes para este requerimiento.")
 
     st.subheader("Documentación pendiente")
-    if pending:
-        st.dataframe(pending, use_container_width=True, hide_index=True)
+    if pending_all:
+        contracts_pending = sorted({str(x["contrato"]) for x in pending_all})
+        auditors_pending = sorted({str(x["auditor"]) for x in pending_all if str(x["auditor"]).strip()})
+        p1, p2 = st.columns(2)
+        with p1:
+            pending_contract_filter = st.selectbox(
+                "Filtrar por contrato", ["Todos"] + contracts_pending, key="pending_contract_filter"
+            )
+        with p2:
+            pending_auditor_filter = st.selectbox(
+                "Filtrar por auditor", ["Todos"] + auditors_pending, key="pending_auditor_filter"
+            )
+
+        pending = [
+            x for x in pending_all
+            if (pending_contract_filter == "Todos" or str(x["contrato"]) == pending_contract_filter)
+            and (pending_auditor_filter == "Todos" or str(x["auditor"]) == pending_auditor_filter)
+        ]
+
+        st.dataframe(
+            [{
+                "Contrato": x["contrato"],
+                "Auditor": x["auditor"],
+                "Solicitud": x["solicitud"],
+                "Documento catálogo": x["documento"],
+                "Especificación": x["especificacion"],
+                "Fecha": x["fecha"],
+            } for x in pending],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        pending_delete_options = {
+            f"{x['contrato']} · {x['solicitud']} · {x['auditor']}": x["id"] for x in pending
+        }
+        delete_pending_labels = st.multiselect(
+            "Eliminar registros pendientes",
+            list(pending_delete_options.keys()),
+            placeholder="Seleccionar registros",
+        )
+        if st.button("Eliminar registros seleccionados", disabled=not delete_pending_labels):
+            ids = [pending_delete_options[x] for x in delete_pending_labels]
+            try:
+                persist(
+                    lambda latest: delete_pending_records(latest, requirement, ids),
+                    f"Eliminar faltantes pendientes · {requirement}",
+                )
+                st.success("Los registros pendientes seleccionados fueron eliminados.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"No fue posible eliminar los registros: {exc}")
+
+        st.divider()
         c1, c2 = st.columns(2)
         with c1:
             cut_date = st.date_input("Fecha del nuevo corte", value=date.today())
         with c2:
-            cut_user = st.text_input("Usuario / iniciales", help="Persona que realiza y registra el corte.").strip()
+            cut_user = st.text_input(
+                "Usuario / iniciales",
+                help="Persona que realiza y registra el corte.",
+            ).strip()
 
-        if st.button(f"Crear corte con {len(pending)} documento(s)", type="primary"):
+        if st.button(f"Crear corte con {len(pending_all)} documento(s)", type="primary"):
             if not cut_user:
                 st.error("Indica el usuario o iniciales de la persona que realiza el corte.")
             else:
-                def mutation(latest: bytes) -> bytes:
-                    return create_cut(latest, requirement, cut_user, cut_date)
                 try:
-                    updated = store.mutate(DATA_FILE, mutation, f"Crear corte {requirement}")
-                    st.session_state.operational_bytes = updated
+                    persist(
+                        lambda latest: create_cut(latest, requirement, cut_user, cut_date),
+                        f"Crear corte {requirement}",
+                    )
                     st.success("Corte creado correctamente.")
                     st.rerun()
                 except Exception as exc:
@@ -287,8 +470,15 @@ else:
         st.info("Este requerimiento todavía no tiene cortes.")
         st.stop()
 
-    cut_map = {f"Corte {x['corte']} · {x['fecha']} · {x['documentos']} documentos": x["corte"] for x in cuts}
-    selected_cut_labels = st.multiselect("Cortes a incluir", list(cut_map.keys()), placeholder="Seleccionar cortes")
+    cut_map = {
+        f"Corte {x['corte']} · {x['fecha']} · {x['documentos']} documentos": x["corte"]
+        for x in cuts
+    }
+    selected_cut_labels = st.multiselect(
+        "Cortes a incluir",
+        list(cut_map.keys()),
+        placeholder="Seleccionar cortes",
+    )
     selected_cuts = [cut_map[x] for x in selected_cut_labels]
 
     if selected_cuts:
