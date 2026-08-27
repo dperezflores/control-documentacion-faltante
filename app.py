@@ -434,38 +434,59 @@ elif section == "Cortes":
             and (pending_auditor_filter == "Todos" or str(x["auditor"]) == pending_auditor_filter)
         ]
 
-        st.dataframe(
-            [{
-                "Contrato": x["contrato"],
-                "Auditor": x["auditor"],
-                "Solicitud": x["solicitud"],
-                "Documento catálogo": x["documento"],
-                "Especificación": x["especificacion"],
-                "Fecha": x["fecha"],
-            } for x in pending],
-            use_container_width=True,
-            hide_index=True,
-        )
+        header = st.columns([1.05, 0.85, 3.6, 3.4, 1.25, 1.35, 0.95])
+        for col, label in zip(
+            header,
+            ["Contrato", "Auditor", "Solicitud", "Documento catálogo", "Especificación", "Fecha", "Acción"],
+        ):
+            col.markdown(f"**{label}**")
 
-        pending_delete_options = {
-            f"{x['contrato']} · {x['solicitud']} · {x['auditor']}": x["id"] for x in pending
-        }
-        delete_pending_labels = st.multiselect(
-            "Eliminar registros pendientes",
-            list(pending_delete_options.keys()),
-            placeholder="Seleccionar registros",
-        )
-        if st.button("Eliminar registros seleccionados", disabled=not delete_pending_labels):
-            ids = [pending_delete_options[x] for x in delete_pending_labels]
-            try:
-                persist(
-                    lambda latest: delete_pending_records(latest, requirement, ids),
-                    f"Eliminar faltantes pendientes · {requirement}",
+        for row in pending:
+            cols = st.columns([1.05, 0.85, 3.6, 3.4, 1.25, 1.35, 0.95])
+            cols[0].write(row["contrato"])
+            cols[1].write(row["auditor"])
+            cols[2].write(row["solicitud"])
+            cols[3].write(row["documento"])
+            cols[4].write(row["especificacion"] or "—")
+            cols[5].write(row["fecha"])
+
+            if cols[6].button(
+                "Eliminar",
+                key=f"delete_pending_{row['id']}",
+                use_container_width=True,
+            ):
+                st.session_state["pending_delete_confirm"] = row["id"]
+
+            if st.session_state.get("pending_delete_confirm") == row["id"]:
+                st.warning(
+                    f"¿Seguro que deseas eliminar este registro pendiente? "
+                    f"{row['contrato']} · {row['solicitud']}"
                 )
-                st.success("Los registros pendientes seleccionados fueron eliminados.")
-                st.rerun()
-            except Exception as exc:
-                st.error(f"No fue posible eliminar los registros: {exc}")
+                c_yes, c_no = st.columns([1, 1])
+                if c_yes.button(
+                    "Sí, eliminar",
+                    key=f"confirm_delete_pending_{row['id']}",
+                    type="primary",
+                ):
+                    try:
+                        persist(
+                            lambda latest: delete_pending_records(
+                                latest, requirement, [row["id"]]
+                            ),
+                            f"Eliminar faltante pendiente · {requirement}",
+                        )
+                        st.session_state.pop("pending_delete_confirm", None)
+                        st.success("El registro pendiente fue eliminado.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"No fue posible eliminar el registro: {exc}")
+
+                if c_no.button(
+                    "Cancelar",
+                    key=f"cancel_delete_pending_{row['id']}",
+                ):
+                    st.session_state.pop("pending_delete_confirm", None)
+                    st.rerun()
 
         st.divider()
         c1, c2 = st.columns(2)
