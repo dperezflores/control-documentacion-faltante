@@ -67,29 +67,72 @@ def _effective_document(documento, especificacion) -> str:
         return f"{doc} ({spec})"
     return doc or spec
 
+def _split_visible_documents(value) -> list[str]:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    return [line.strip(" •\t") for line in text.split("\n") if line.strip(" •\t")]
+
+
+def manual_visible_documents(data: bytes, requirement: str, contract: str) -> list[str]:
+    """Devuelve textos visibles que no tienen registro técnico en _APP_FALTANTES."""
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    visible_ws = wb[requirement]
+    visible_value = ""
+    for r in range(8, visible_ws.max_row + 1):
+        if str(visible_ws.cell(r, 2).value or "").strip() == contract:
+            visible_value = visible_ws.cell(r, 5).value or ""
+            break
+
+    tech = wb[FALTANTES_SHEET]
+    h = _headers(tech)
+    technical_docs = set()
+    for r in range(2, tech.max_row + 1):
+        if (
+            tech.cell(r, h["Requerimiento"]).value == requirement
+            and str(tech.cell(r, h["Contrato"]).value or "").strip() == contract
+        ):
+            technical_docs.add(
+                _effective_document(
+                    tech.cell(r, h["Documento"]).value,
+                    tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
+                )
+            )
+
+    return [x for x in _split_visible_documents(visible_value) if x not in technical_docs]
+
+
 
 def _rebuild_visible_cell(wb, requirement: str, contract: str) -> None:
     tech = wb[FALTANTES_SHEET]
     h = _headers(tech)
-    docs: list[str] = []
+    technical_docs: list[str] = []
     for r in range(2, tech.max_row + 1):
         if tech.cell(r, h["Requerimiento"]).value == requirement and str(tech.cell(r, h["Contrato"]).value or "").strip() == contract:
             text = _effective_document(
                 tech.cell(r, h["Documento"]).value,
                 tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
             )
-            if text and text not in docs:
-                docs.append(text)
+            if text and text not in technical_docs:
+                technical_docs.append(text)
 
     visible_ws = wb[requirement]
     target_row = None
+    current_visible = ""
     for r in range(8, visible_ws.max_row + 1):
         if str(visible_ws.cell(r, 2).value or "").strip() == contract:
             target_row = r
+            current_visible = visible_ws.cell(r, 5).value or ""
             break
     if target_row is None:
         raise ValueError("No se encontró el contrato en la hoja seleccionada.")
-    visible_ws.cell(target_row, 5).value = "\n".join(docs)
+
+    # Conserva textos capturados manualmente antes o fuera de la aplicación.
+    manual_docs = [
+        x for x in _split_visible_documents(current_visible)
+        if x not in set(technical_docs)
+    ]
+    combined = manual_docs + [x for x in technical_docs if x not in manual_docs]
+    visible_ws.cell(target_row, 5).value = "\n".join(combined)
 
 
 def _update_cut_count(wb, requirement: str, cut_number: int) -> None:
