@@ -589,6 +589,7 @@ elif section == "Cortes":
                 details = cut_details(operational, requirement, cut["corte"])
                 if details:
                     display_rows = [{
+                        "Requerimiento": x["requerimiento"],
                         "Contrato": x["contrato"],
                         "Auditor": x["auditor"],
                         "Solicitud": x["solicitud"],
@@ -734,28 +735,29 @@ elif section == "Cortes":
             )
         ]
 
-        header = st.columns([1.15, 0.85, 4.9, 1.8, 1.55, 1.35])
+        header = st.columns([1.35, 1.15, 0.85, 4.4, 1.65, 1.45, 1.25])
         for col, label in zip(
             header,
-            ["Contrato", "Auditor", "Solicitud", "Origen", "Fecha", "Acción"],
+            ["Requerimiento", "Contrato", "Auditor", "Solicitud", "Origen", "Fecha", "Acción"],
         ):
             col.markdown(f"**{label}**")
 
         for row in pending:
-            cols = st.columns([1.15, 0.85, 4.9, 1.8, 1.55, 1.35])
-            cols[0].write(row["contrato"])
-            cols[1].write(row["auditor"])
-            cols[2].write(row["solicitud"])
-            cols[3].write(row.get("origen", "Aplicación"))
+            cols = st.columns([1.35, 1.15, 0.85, 4.4, 1.65, 1.45, 1.25])
+            cols[0].write(row.get("requerimiento", requirement))
+            cols[1].write(row["contrato"])
+            cols[2].write(row["auditor"])
+            cols[3].write(row["solicitud"])
+            cols[4].write(row.get("origen", "Aplicación"))
 
             fecha = row.get("fecha")
             if hasattr(fecha, "strftime"):
                 fecha_text = fecha.strftime("%d/%m/%Y %H:%M")
             else:
                 fecha_text = "—"
-            cols[4].write(fecha_text)
+            cols[5].write(fecha_text)
 
-            if cols[5].button(
+            if cols[6].button(
                 "Eliminar",
                 key=f"delete_pending_{row['id']}",
                 use_container_width=True,
@@ -842,7 +844,13 @@ else:
         c1, c2 = st.columns(2)
         c1.metric("Contratos", contracts_count)
         c2.metric("Documentos", len(records))
-        st.dataframe(records, use_container_width=True, hide_index=True)
+        preview_records = [{
+            "Requerimiento": x.get("requerimiento", requirement),
+            "Contrato": x["contrato"],
+            "Documento": x["documento"],
+            "Corte": x["corte"],
+        } for x in records]
+        st.dataframe(preview_records, use_container_width=True, hide_index=True)
         docx = build_request_docx(requirement, selected_cuts, records)
         filename = f"Solicitud_{requirement}_Cortes_{'-'.join(map(str, sorted(selected_cuts)))}.docx"
         st.download_button(
