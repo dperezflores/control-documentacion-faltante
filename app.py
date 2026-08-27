@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 
@@ -28,6 +29,7 @@ st.set_page_config(page_title="Control documental", layout="wide")
 
 DATA_FILE = "data/Documentacion_faltante.xlsx"
 CATALOG_FILE = "data/Codificacion_documentos.xlsx"
+LOCAL_TZ = ZoneInfo("America/Mexico_City")
 
 CUSTOM_CSS = """
 <style>
@@ -55,7 +57,7 @@ CUSTOM_CSS = """
     .subtle-box {
         background: #ffffff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px;
     }
-    .stButton > button { border-radius: 8px; font-weight: 650; }
+    .stButton > button { border-radius: 8px; font-weight: 650; white-space: nowrap; }
     .stButton > button[kind="primary"] { font-weight: 700; }
 </style>
 """
@@ -434,23 +436,28 @@ elif section == "Cortes":
             and (pending_auditor_filter == "Todos" or str(x["auditor"]) == pending_auditor_filter)
         ]
 
-        header = st.columns([1.05, 0.85, 3.6, 3.4, 1.25, 1.35, 0.95])
+        header = st.columns([1.15, 0.85, 4.9, 1.8, 1.55, 1.35])
         for col, label in zip(
             header,
-            ["Contrato", "Auditor", "Solicitud", "Documento catálogo", "Especificación", "Fecha", "Acción"],
+            ["Contrato", "Auditor", "Solicitud", "Origen", "Fecha", "Acción"],
         ):
             col.markdown(f"**{label}**")
 
         for row in pending:
-            cols = st.columns([1.05, 0.85, 3.6, 3.4, 1.25, 1.35, 0.95])
+            cols = st.columns([1.15, 0.85, 4.9, 1.8, 1.55, 1.35])
             cols[0].write(row["contrato"])
             cols[1].write(row["auditor"])
             cols[2].write(row["solicitud"])
-            cols[3].write(row["documento"])
-            cols[4].write(row["especificacion"] or "—")
-            cols[5].write(row["fecha"])
+            cols[3].write(row.get("origen", "Aplicación"))
 
-            if cols[6].button(
+            fecha = row.get("fecha")
+            if hasattr(fecha, "strftime"):
+                fecha_text = fecha.strftime("%d/%m/%Y %H:%M")
+            else:
+                fecha_text = "—"
+            cols[4].write(fecha_text)
+
+            if cols[5].button(
                 "Eliminar",
                 key=f"delete_pending_{row['id']}",
                 use_container_width=True,
@@ -491,7 +498,7 @@ elif section == "Cortes":
         st.divider()
         c1, c2 = st.columns(2)
         with c1:
-            cut_date = st.date_input("Fecha del nuevo corte", value=date.today())
+            cut_date = st.date_input("Fecha del nuevo corte", value=datetime.now(LOCAL_TZ).date())
         with c2:
             cut_user = st.text_input(
                 "Usuario / iniciales",
