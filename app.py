@@ -146,26 +146,10 @@ CUSTOM_CSS = """
         color: #FF5E12 !important;
     }
 
-    /* Ocultar únicamente los accesos de código/repositorio.
-       El header y los controles de la barra lateral permanecen activos. */
-    [data-testid="stToolbar"],
+        /* Mantener intactos los controles nativos de la barra lateral.
+       Sólo ocultamos el menú principal de Streamlit. */
     #MainMenu {
         display: none !important;
-    }
-
-    header[data-testid="stHeader"] {
-        background: transparent !important;
-        height: 3rem !important;
-        min-height: 3rem !important;
-        pointer-events: auto !important;
-    }
-
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"],
-    button[kind="headerNoPadding"] {
-        visibility: visible !important;
-        opacity: 1 !important;
-        z-index: 999999 !important;
     }
 
     [data-testid="stSidebarCollapsedControl"],
