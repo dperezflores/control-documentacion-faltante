@@ -418,22 +418,59 @@ elif section == "Cortes":
 
     st.subheader("Documentación pendiente")
     if pending_all:
-        contracts_pending = sorted({str(x["contrato"]) for x in pending_all})
-        auditors_pending = sorted({str(x["auditor"]) for x in pending_all if str(x["auditor"]).strip()})
+        current_contract = st.session_state.get("pending_contract_filter", "Todos")
+        current_auditor = st.session_state.get("pending_auditor_filter", "Todos")
+
+        # Opciones de auditor limitadas por el contrato actualmente seleccionado.
+        auditor_source = [
+            x for x in pending_all
+            if current_contract == "Todos" or str(x["contrato"]) == current_contract
+        ]
+        auditors_pending = sorted({
+            str(x["auditor"]).strip()
+            for x in auditor_source
+            if str(x["auditor"]).strip()
+        })
+        auditor_options = ["Todos"] + auditors_pending
+        if current_auditor not in auditor_options:
+            current_auditor = "Todos"
+            st.session_state["pending_auditor_filter"] = "Todos"
+
+        # Opciones de contrato limitadas por el auditor actualmente seleccionado.
+        contract_source = [
+            x for x in pending_all
+            if current_auditor == "Todos" or str(x["auditor"]).strip() == current_auditor
+        ]
+        contracts_pending = sorted({str(x["contrato"]) for x in contract_source})
+        contract_options = ["Todos"] + contracts_pending
+        if current_contract not in contract_options:
+            current_contract = "Todos"
+            st.session_state["pending_contract_filter"] = "Todos"
+
         p1, p2 = st.columns(2)
         with p1:
             pending_contract_filter = st.selectbox(
-                "Filtrar por contrato", ["Todos"] + contracts_pending, key="pending_contract_filter"
+                "Filtrar por contrato",
+                contract_options,
+                key="pending_contract_filter",
             )
         with p2:
             pending_auditor_filter = st.selectbox(
-                "Filtrar por auditor", ["Todos"] + auditors_pending, key="pending_auditor_filter"
+                "Filtrar por auditor",
+                auditor_options,
+                key="pending_auditor_filter",
             )
 
         pending = [
             x for x in pending_all
-            if (pending_contract_filter == "Todos" or str(x["contrato"]) == pending_contract_filter)
-            and (pending_auditor_filter == "Todos" or str(x["auditor"]) == pending_auditor_filter)
+            if (
+                pending_contract_filter == "Todos"
+                or str(x["contrato"]) == pending_contract_filter
+            )
+            and (
+                pending_auditor_filter == "Todos"
+                or str(x["auditor"]).strip() == pending_auditor_filter
+            )
         ]
 
         header = st.columns([1.15, 0.85, 4.9, 1.8, 1.55, 1.35])
