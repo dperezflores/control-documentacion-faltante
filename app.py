@@ -20,7 +20,7 @@ from services.excel_service import (
     pending_summary,
     remove_records_from_cut,
 )
-from services.google_drive_service import build_store
+from services.github_service import build_store
 from services.word_service import build_request_docx
 
 st.set_page_config(page_title="Control documental", layout="wide")
