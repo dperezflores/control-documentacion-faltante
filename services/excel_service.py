@@ -15,7 +15,7 @@ OFICIOS_SHEET = "_APP_OFICIOS"
 
 FALTANTES_HEADERS = [
     "ID", "Requerimiento", "Contrato", "Procedimiento", "Codigo_documento",
-    "Documento", "Especificacion", "Fecha_deteccion", "Auditor", "Corte"
+    "Documento", "Especificacion", "Fecha_deteccion", "Auditor", "Corte", "Origen"
 ]
 CORTES_HEADERS = ["ID", "Requerimiento", "Corte", "Fecha", "Creado_por", "Documentos"]
 OFICIOS_HEADERS = ["ID", "Requerimiento", "Fecha", "Cortes", "Referencia", "Creado_por"]
@@ -69,6 +69,15 @@ def _effective_document(documento, especificacion) -> str:
     if doc and spec:
         return f"{doc} ({spec})"
     return doc or spec
+
+def _record_origin(row: dict) -> str:
+    explicit = str(row.get("Origen") or "").strip()
+    if explicit:
+        return explicit
+    if str(row.get("Procedimiento") or "").strip().upper() == "MANUAL":
+        return "Registro previo / manual"
+    return "Aplicación"
+
 
 def _split_visible_documents(value) -> list[str]:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -195,6 +204,7 @@ def _append_manual_to_tech(wb, requirement: str, manual_row: dict, cut_value) ->
         "Fecha_deteccion": datetime.now(LOCAL_TZ).replace(tzinfo=None, microsecond=0),
         "Auditor": manual_row.get("auditor") or "",
         "Corte": cut_value,
+        "Origen": "Registro previo / manual",
     }
     for name, value in values.items():
         row[h[name] - 1] = value
@@ -286,7 +296,15 @@ def document_history(data: bytes, requirement: str, contract: str) -> dict[str, 
         code = str(row.get("Codigo_documento") or "")
         if not code:
             continue
-        entry = history.setdefault(code, {"cuts": [], "pending": False, "documento": row.get("Documento")})
+        entry = history.setdefault(
+            code,
+            {
+                "cuts": [],
+                "pending": False,
+                "documento": row.get("Documento"),
+                "origen": _record_origin(row),
+            },
+        )
         cut = row.get("Corte")
         if str(cut) == "PENDIENTE":
             entry["pending"] = True
@@ -330,6 +348,7 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
             "Fecha_deteccion": now,
             "Auditor": auditor,
             "Corte": "PENDIENTE",
+            "Origen": "Aplicación",
         }
         for name, value in values.items():
             row[h[name] - 1] = value
@@ -364,7 +383,10 @@ def pending_summary(data: bytes, requirement: str) -> list[dict]:
             "solicitud": _effective_document(documento, especificacion),
             "fecha": tech.cell(r, h["Fecha_deteccion"]).value,
             "auditor": tech.cell(r, h["Auditor"]).value,
-            "origen": "Aplicación",
+            "origen": _record_origin({
+                "Origen": tech.cell(r, h["Origen"]).value if "Origen" in h else "",
+                "Procedimiento": tech.cell(r, h["Procedimiento"]).value,
+            }),
         })
 
     result.extend(_manual_pending_rows_from_wb(wb, requirement))
@@ -406,6 +428,7 @@ def cut_details(data: bytes, requirement: str, cut_number: int) -> list[dict]:
                 "documento": row.get("Documento"),
                 "especificacion": row.get("Especificacion") or "",
                 "solicitud": row.get("Documento_efectivo"),
+                "origen": _record_origin(row),
                 "fecha": row.get("Fecha_deteccion"),
                 "corte": current_cut,
             })
