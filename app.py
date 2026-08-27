@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha1
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -473,20 +474,56 @@ if section == "Capturar faltantes":
         options[label] = item
 
     st.subheader("Documentación faltante")
-    st.caption("Selecciona los documentos faltantes. Si necesitas pedir sólo una parte del documento catalogado, utiliza el campo de especificación.")
-    selected_labels = st.multiselect("Documentos", list(options.keys()), placeholder="Seleccionar documentos")
+    st.caption(
+        "Selecciona documentos del catálogo. Si el documento que necesitas no aparece en la lista, "
+        "puedes escribirlo directamente en el campo de solicitud libre."
+    )
+    selected_labels = st.multiselect(
+        "Documentos",
+        list(options.keys()),
+        placeholder="Seleccionar documentos",
+    )
     selected_items = [dict(options[x]) for x in selected_labels]
 
-    if selected_items:
-        st.markdown("#### Especificación de la solicitud")
-        st.caption("Opcional. Si se deja vacío, se solicitará el nombre completo del documento del catálogo.")
-        for item in selected_items:
-            item["especificacion"] = st.text_input(
-                item["documento"],
-                key=f"spec_{requirement}_{contract['contrato']}_{item['codigo']}",
-                placeholder="Ej. Tarjetas de precios unitarios",
-                help="Escribe únicamente lo que deseas solicitar cuando el concepto del catálogo sea más amplio.",
+    st.markdown("#### Especificación de la solicitud")
+    st.caption(
+        "Para documentos del catálogo, la especificación es opcional y se mostrará entre paréntesis. "
+        "También puedes capturar directamente un documento que no exista en el catálogo."
+    )
+
+    for item in selected_items:
+        item["especificacion"] = st.text_input(
+            item["documento"],
+            key=f"spec_{requirement}_{contract['contrato']}_{item['codigo']}",
+            placeholder="Ej. Tarjetas de precios unitarios",
+            help="Escribe únicamente la parte específica que deseas solicitar.",
+        )
+
+    free_document = st.text_area(
+        "Documento no listado / solicitud libre",
+        key=f"free_doc_{requirement}_{contract['contrato']}",
+        placeholder="Escribe aquí el documento faltante cuando no exista en la lista del catálogo.",
+        help="Este texto se guardará como una solicitud independiente y aparecerá tal como lo escribas.",
+    ).strip()
+
+    custom_item = None
+    custom_pending = False
+    if free_document:
+        normalized = " ".join(free_document.casefold().split())
+        custom_code = "LIBRE_" + sha1(normalized.encode("utf-8")).hexdigest()[:16]
+        custom_item = {
+            "codigo": custom_code,
+            "documento": free_document,
+            "especificacion": "",
+        }
+        custom_history = history.get(custom_code, {})
+        custom_pending = bool(custom_history.get("pending"))
+        if custom_pending:
+            st.info(
+                "Este documento escrito manualmente ya se encuentra pendiente de corte para el contrato seleccionado."
             )
+        else:
+            selected_items.append(custom_item)
 
     repeated = []
     for item in selected_items:
