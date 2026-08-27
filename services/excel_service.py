@@ -61,8 +61,11 @@ def _ensure_technical_sheets(wb) -> None:
 
 
 def _effective_document(documento, especificacion) -> str:
+    doc = str(documento or "").strip()
     spec = str(especificacion or "").strip()
-    return spec if spec else str(documento or "").strip()
+    if doc and spec:
+        return f"{doc} ({spec})"
+    return doc or spec
 
 
 def _rebuild_visible_cell(wb, requirement: str, contract: str) -> None:
