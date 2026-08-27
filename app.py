@@ -20,7 +20,7 @@ from services.excel_service import (
     pending_summary,
     remove_records_from_cut,
 )
-from services.github_service import build_store
+from services.google_drive_service import build_store
 from services.word_service import build_request_docx
 
 st.set_page_config(page_title="Control documental", layout="wide")
@@ -106,6 +106,12 @@ st.markdown(
 
 loaded = load_session_files()
 if loaded is None:
+    if storage_mode == "Google Drive":
+        st.error(
+            "No fue posible localizar uno de los Excel configurados en Google Drive. "
+            "Verifica los fileId y que la carpeta esté compartida con la cuenta de servicio."
+        )
+        st.stop()
     st.subheader("Inicializar archivos del prototipo")
     st.info("Carga una sola vez el Excel de documentación faltante y el Excel de codificación.")
     op_upload = st.file_uploader("Excel de documentación faltante", type=["xlsx"], key="op")
