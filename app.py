@@ -146,15 +146,31 @@ CUSTOM_CSS = """
         color: #FF5E12 !important;
     }
 
-    /* Ocultar controles de Streamlit Cloud que exponen código/repositorio */
+    /* Ocultar controles de Streamlit Cloud que exponen código/repositorio,
+       conservando el control para abrir/cerrar la barra lateral. */
     [data-testid="stToolbar"],
     [data-testid="stDecoration"],
     [data-testid="stStatusWidget"],
-    #MainMenu,
+    #MainMenu {
+        display: none !important;
+    }
+
     header[data-testid="stHeader"] {
-        visibility: hidden !important;
-        height: 0 !important;
-        min-height: 0 !important;
+        background: transparent !important;
+        height: 2.75rem !important;
+        min-height: 2.75rem !important;
+    }
+
+    [data-testid="stHeader"] [data-testid="stToolbar"] {
+        display: none !important;
+    }
+
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        display: flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        color: #00304F !important;
     }
 
     /* Controles */
