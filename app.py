@@ -25,7 +25,7 @@ from services.excel_service import (
 from services.github_service import build_store
 from services.word_service import build_request_docx
 
-st.set_page_config(page_title="Control documental", layout="wide")
+st.set_page_config(page_title="Control documental", layout="wide", initial_sidebar_state="expanded")
 
 DATA_FILE = "data/Documentacion_faltante.xlsx"
 CATALOG_FILE = "data/Codificacion_documentos.xlsx"
@@ -146,30 +146,33 @@ CUSTOM_CSS = """
         color: #FF5E12 !important;
     }
 
-    /* Ocultar controles de Streamlit Cloud que exponen código/repositorio,
-       conservando el control para abrir/cerrar la barra lateral. */
+    /* Ocultar únicamente los accesos de código/repositorio.
+       El header y los controles de la barra lateral permanecen activos. */
     [data-testid="stToolbar"],
-    [data-testid="stDecoration"],
-    [data-testid="stStatusWidget"],
     #MainMenu {
         display: none !important;
     }
 
     header[data-testid="stHeader"] {
         background: transparent !important;
-        height: 2.75rem !important;
-        min-height: 2.75rem !important;
+        height: 3rem !important;
+        min-height: 3rem !important;
+        pointer-events: auto !important;
     }
 
-    [data-testid="stHeader"] [data-testid="stToolbar"] {
-        display: none !important;
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"],
+    button[kind="headerNoPadding"] {
+        visibility: visible !important;
+        opacity: 1 !important;
+        z-index: 999999 !important;
     }
 
     [data-testid="stSidebarCollapsedControl"],
     [data-testid="collapsedControl"] {
-        display: flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
+        position: fixed !important;
+        top: .65rem !important;
+        left: .65rem !important;
         color: #00304F !important;
     }
 
