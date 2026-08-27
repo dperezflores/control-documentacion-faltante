@@ -330,17 +330,20 @@ store, storage_mode = build_store(secret_dict())
 
 def load_session_files(force: bool = False) -> tuple[bytes, bytes] | None:
     if force:
-        st.session_state.pop("operational_bytes", None)
         st.session_state.pop("catalog_bytes", None)
 
-    if "operational_bytes" in st.session_state and "catalog_bytes" in st.session_state:
-        return st.session_state.operational_bytes, st.session_state.catalog_bytes
-
     try:
+        # El Excel operativo siempre se vuelve a leer desde Google Drive en cada
+        # rerun de Streamlit, para reflejar cambios manuales, nuevos auditores
+        # y nuevas hojas Req_* sin depender de una copia vieja de la sesión.
         operational = store.read(DATA_FILE).content
-        catalog = store.read(CATALOG_FILE).content
-        st.session_state.operational_bytes = operational
-        st.session_state.catalog_bytes = catalog
+
+        if "catalog_bytes" in st.session_state and not force:
+            catalog = st.session_state.catalog_bytes
+        else:
+            catalog = store.read(CATALOG_FILE).content
+            st.session_state.catalog_bytes = catalog
+
         return operational, catalog
     except FileNotFoundError:
         return None
@@ -350,9 +353,7 @@ def load_session_files(force: bool = False) -> tuple[bytes, bytes] | None:
 
 
 def persist(mutator, message: str) -> bytes:
-    updated = store.mutate(DATA_FILE, mutator, message)
-    st.session_state.operational_bytes = updated
-    return updated
+    return store.mutate(DATA_FILE, mutator, message)
 
 
 st.markdown(
@@ -549,7 +550,7 @@ if section == "Capturar faltantes":
                 cuts = ", ".join(map(str, item.get("cuts", []))) or "—"
                 rows.append({
                     "Documento": item.get("documento") or catalog_by_code.get(code, code),
-                    "Origen": "Aplicación",
+                    "Origen": item.get("origen", "Aplicación"),
                     "Cortes anteriores": cuts,
                     "Estado actual": status,
                 })
@@ -593,6 +594,7 @@ elif section == "Cortes":
                         "Contrato": x["contrato"],
                         "Auditor": x["auditor"],
                         "Solicitud": x["solicitud"],
+                        "Origen": x.get("origen", "Aplicación"),
                         "Documento catálogo": x["documento"],
                         "Especificación": x["especificacion"],
                     } for x in details]
