@@ -16,6 +16,7 @@ from services.excel_service import (
     list_cuts,
     list_requirements,
     load_catalog,
+    manual_visible_documents,
     move_records_to_cut,
     pending_summary,
     remove_records_from_cut,
@@ -269,7 +270,13 @@ if section == "Capturar faltantes":
             except Exception as exc:
                 st.error(f"No fue posible guardar: {exc}")
 
-    existing_count = sum(1 for item in history.values() if item.get("cuts") or item.get("pending"))
+    manual_docs = manual_visible_documents(
+        operational, requirement, contract["contrato"]
+    )
+    existing_count = (
+        sum(1 for item in history.values() if item.get("cuts") or item.get("pending"))
+        + len(manual_docs)
+    )
     if existing_count:
         with st.expander(f"Historial del contrato ({existing_count} documentos)"):
             rows = []
@@ -279,10 +286,26 @@ if section == "Capturar faltantes":
                 cuts = ", ".join(map(str, item.get("cuts", []))) or "—"
                 rows.append({
                     "Documento": item.get("documento") or catalog_by_code.get(code, code),
+                    "Origen": "Aplicación",
                     "Cortes anteriores": cuts,
                     "Estado actual": status,
                 })
+
+            for text in manual_docs:
+                rows.append({
+                    "Documento": text,
+                    "Origen": "Registro previo / manual",
+                    "Cortes anteriores": "—",
+                    "Estado actual": "No registrado con la aplicación",
+                })
+
             st.dataframe(rows, use_container_width=True, hide_index=True)
+            if manual_docs:
+                st.caption(
+                    "Los registros marcados como 'Registro previo / manual' ya existían "
+                    "en la columna Documentación faltante del Excel y no fueron creados "
+                    "por la aplicación."
+                )
 
 elif section == "Cortes":
     pending_all = pending_summary(operational, requirement)
