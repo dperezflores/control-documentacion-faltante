@@ -111,6 +111,7 @@ def _manual_pending_rows_from_wb(wb, requirement: str) -> list[dict]:
                 continue
             result.append({
                 "id": _manual_id(requirement, contract, text),
+                "requerimiento": requirement,
                 "contrato": contract,
                 "codigo": "",
                 "documento": text,
@@ -355,6 +356,7 @@ def pending_summary(data: bytes, requirement: str) -> list[dict]:
         especificacion = tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else ""
         result.append({
             "id": tech.cell(r, h["ID"]).value,
+            "requerimiento": requirement,
             "contrato": tech.cell(r, h["Contrato"]).value,
             "codigo": tech.cell(r, h["Codigo_documento"]).value,
             "documento": documento,
@@ -397,6 +399,7 @@ def cut_details(data: bytes, requirement: str, cut_number: int) -> list[dict]:
         if current_cut == int(cut_number):
             result.append({
                 "id": row.get("ID"),
+                "requerimiento": requirement,
                 "contrato": row.get("Contrato"),
                 "auditor": row.get("Auditor"),
                 "codigo": row.get("Codigo_documento"),
@@ -601,6 +604,7 @@ def documents_for_cuts(data: bytes, requirement: str, cuts_selected: Iterable[in
             continue
         if cut_int in selected:
             result.append({
+                "requerimiento": requirement,
                 "contrato": row.get("Contrato"),
                 "documento": row.get("Documento_efectivo"),
                 "corte": cut_int,
