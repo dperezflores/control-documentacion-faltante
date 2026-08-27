@@ -112,6 +112,24 @@ class GitHubFileStore:
 
 def build_store(secrets: dict | None = None):
     secrets = secrets or {}
+
+    # Si existen los secretos de Google Drive, éste se convierte en el
+    # almacenamiento operativo. GitHub queda sólo como repositorio de código.
+    try:
+        from services.google_drive_service import build_google_drive_store
+        google_store = build_google_drive_store(secrets)
+        if google_store is not None:
+            return google_store, "Google Drive"
+    except Exception:
+        # Si la configuración de Google existe pero es inválida, dejamos que
+        # el error aparezca al intentar leer para facilitar el diagnóstico.
+        if (
+            secrets.get("GOOGLE_DRIVE_DATA_FILE_ID")
+            or secrets.get("GOOGLE_DRIVE_CATALOG_FILE_ID")
+            or secrets.get("google_service_account")
+        ):
+            raise
+
     token = secrets.get("GITHUB_TOKEN") or os.getenv("GITHUB_TOKEN")
     owner = secrets.get("GITHUB_OWNER") or os.getenv("GITHUB_OWNER") or "dperezflores"
     repo = secrets.get("GITHUB_REPO") or os.getenv("GITHUB_REPO") or "control-documentacion-faltante"
