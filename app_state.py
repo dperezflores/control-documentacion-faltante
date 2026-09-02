@@ -45,7 +45,7 @@ class AppState:
         current = self.store.read(DATA_FILE)
         self.session.operational_bytes = current.content
         self.session.operational_version = (
-            current.version if current.version is not None else remote_version
+            remote_version if remote_version is not None else current.version
         )
         return current.content
 
@@ -63,7 +63,10 @@ class AppState:
 
         current = self.store.read(CATALOG_FILE)
         self.session.catalog_bytes = current.content
-        self.session.catalog_version = current.version
+        self.session.catalog_version = (
+            remote_version if not force and remote_version is not None
+            else current.version
+        )
         return current.content
 
     def load_files(self, force: bool = False) -> tuple[bytes, bytes] | None:
