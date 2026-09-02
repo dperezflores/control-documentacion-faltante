@@ -1,0 +1,88 @@
+name: Temporary cache regression test
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openpyxl
+      - name: Run read-cache and cut lifecycle regression
+        run: |
+          python - <<'PY'
+          from io import BytesIO
+          from datetime import date
+          from openpyxl import Workbook
+          from services import excel_service as es
+
+          wb = Workbook()
+          ws = wb.active
+          ws.title = "Req_TEST"
+          ws.cell(8, 1).value = 1
+          ws.cell(8, 2).value = "CT-001"
+          ws.cell(8, 3).value = "Obra"
+          ws.cell(8, 4).value = "Contratista"
+          ws.cell(8, 5).value = ""
+          ws.cell(8, 6).value = "AUD"
+          ws.cell(8, 7).value = ""
+
+          for name in ("DIR", "LPU", "LSI"):
+              cat = wb.create_sheet(name)
+              cat.cell(3, 1).value = f"{name}_01"
+              cat.cell(3, 2).value = "Documento de prueba"
+
+          out = BytesIO()
+          wb.save(out)
+          data = out.getvalue()
+
+          assert es.list_requirements(data) == ["Req_TEST"]
+          assert es.list_contracts(data, "Req_TEST")[0]["contrato"] == "CT-001"
+          assert es.load_catalog(data, "DIR")[0]["documento"] == "Documento de prueba"
+          assert es.pending_summary(data, "Req_TEST") == []
+          assert es.list_cuts(data, "Req_TEST") == []
+          assert es.pending_summary_all(data) == []
+          assert es.list_general_cuts(data) == []
+
+          first = es._load_cached(data)
+          second = es._load_cached(data)
+          assert first is second
+          info = es._load_cached.cache_info()
+          assert info.maxsize == 8
+          assert info.hits >= 1
+
+          data2 = es.add_faltantes(
+              data,
+              "Req_TEST",
+              "CT-001",
+              "DIR",
+              "AUD",
+              [{"codigo": "DIR_01", "documento": "Documento de prueba", "especificacion": ""}],
+          )
+          pending = es.pending_summary(data2, "Req_TEST")
+          assert len(pending) == 1
+          assert pending[0]["solicitud"] == "Documento de prueba"
+
+          cut_data = es.create_cut(data2, "Req_TEST", "AUD", date(2026, 9, 2))
+          assert es.pending_summary(cut_data, "Req_TEST") == []
+          cuts = es.list_cuts(cut_data, "Req_TEST")
+          assert len(cuts) == 1
+          assert cuts[0]["corte"] == 1
+          assert cuts[0]["documentos"] == 1
+          assert len(es.cut_details(cut_data, "Req_TEST", 1)) == 1
+          assert len(es.documents_for_cuts(cut_data, "Req_TEST", [1])) == 1
+
+          deleted = es.delete_cut(cut_data, "Req_TEST", 1)
+          assert es.list_cuts(deleted, "Req_TEST") == []
+          pending_after_delete = es.pending_summary(deleted, "Req_TEST")
+          assert len(pending_after_delete) == 1
+          assert pending_after_delete[0]["solicitud"] == "Documento de prueba"
+
+          print("FLOW_OK")
+          print(es._load_cached.cache_info())
+          PY
