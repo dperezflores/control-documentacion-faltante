@@ -470,7 +470,7 @@ class CortesView(BaseView):
             ):
                 col.markdown(f"**{label}**")
 
-            for row in pending:
+            for idx, row in enumerate(pending):
                 cols = st.columns([1.35, 1.15, 0.85, 4.4, 1.65, 1.45, 1.25])
                 cols[0].write(row.get("requerimiento", ""))
                 cols[1].write(row["contrato"])
@@ -487,7 +487,7 @@ class CortesView(BaseView):
 
                 if cols[6].button(
                     "Eliminar",
-                    key=f"delete_pending_all_{row['id']}",
+                    key=f"delete_pending_all_{idx}_{row['id']}",
                     use_container_width=True,
                 ):
                     st.session_state["pending_delete_confirm_all"] = row["id"]
@@ -500,7 +500,7 @@ class CortesView(BaseView):
                     c_yes, c_no = st.columns([1, 1])
                     if c_yes.button(
                         "Sí, eliminar",
-                        key=f"confirm_delete_pending_all_{row['id']}",
+                        key=f"confirm_delete_pending_all_{idx}_{row['id']}",
                         type="primary",
                     ):
                         try:
@@ -519,7 +519,7 @@ class CortesView(BaseView):
 
                     if c_no.button(
                         "Cancelar",
-                        key=f"cancel_delete_pending_all_{row['id']}",
+                        key=f"cancel_delete_pending_all_{idx}_{row['id']}",
                     ):
                         st.session_state.pop("pending_delete_confirm_all", None)
                         st.rerun()
@@ -729,7 +729,7 @@ class CortesView(BaseView):
             ):
                 col.markdown(f"**{label}**")
 
-            for row in pending:
+            for idx, row in enumerate(pending):
                 cols = st.columns([1.35, 1.15, 0.85, 4.4, 1.65, 1.45, 1.25])
                 cols[0].write(row.get("requerimiento", requirement))
                 cols[1].write(row["contrato"])
@@ -746,7 +746,7 @@ class CortesView(BaseView):
 
                 if cols[6].button(
                     "Eliminar",
-                    key=f"delete_pending_{row['id']}",
+                    key=f"delete_pending_{idx}_{row['id']}",
                     use_container_width=True,
                 ):
                     st.session_state["pending_delete_confirm"] = row["id"]
@@ -759,7 +759,7 @@ class CortesView(BaseView):
                     c_yes, c_no = st.columns([1, 1])
                     if c_yes.button(
                         "Sí, eliminar",
-                        key=f"confirm_delete_pending_{row['id']}",
+                        key=f"confirm_delete_pending_{idx}_{row['id']}",
                         type="primary",
                     ):
                         try:
@@ -777,7 +777,7 @@ class CortesView(BaseView):
 
                     if c_no.button(
                         "Cancelar",
-                        key=f"cancel_delete_pending_{row['id']}",
+                        key=f"cancel_delete_pending_{idx}_{row['id']}",
                     ):
                         st.session_state.pop("pending_delete_confirm", None)
                         st.rerun()
