@@ -20,11 +20,18 @@ class FileVersion:
 
 
 class LocalFileStore:
+    def get_version(self, path: str) -> str | None:
+        p = Path(path)
+        if not p.exists():
+            raise FileNotFoundError(path)
+        stat = p.stat()
+        return f"{stat.st_mtime_ns}:{stat.st_size}"
+
     def read(self, path: str) -> FileVersion:
         p = Path(path)
         if not p.exists():
             raise FileNotFoundError(path)
-        return FileVersion(p.read_bytes(), None)
+        return FileVersion(p.read_bytes(), self.get_version(path))
 
     def write_new(self, path: str, content: bytes, message: str) -> bytes:
         p = Path(path)
@@ -52,6 +59,21 @@ class GitHubFileStore:
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+
+    def get_version(self, path: str) -> str | None:
+        response = requests.get(
+            f"https://api.github.com/repos/{self.owner}/{self.repo}/commits",
+            headers=self.headers,
+            params={"sha": self.branch, "path": path, "per_page": 1},
+            timeout=30,
+        )
+        if response.status_code == 404:
+            raise FileNotFoundError(path)
+        response.raise_for_status()
+        commits = response.json()
+        if not commits:
+            raise FileNotFoundError(path)
+        return str(commits[0]["sha"])
 
     def read(self, path: str) -> FileVersion:
         response = requests.get(

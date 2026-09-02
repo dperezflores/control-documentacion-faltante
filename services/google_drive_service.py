@@ -52,7 +52,7 @@ class GoogleDriveFileStore:
     def _metadata(self, file_id: str) -> tuple[str | None, str | None]:
         response = self.session.get(
             f"{self.api_base}/{file_id}",
-            params={"fields": "id,name,version,modifiedTime"},
+            params={"fields": "id,name,version,modifiedTime,md5Checksum"},
             timeout=30,
         )
         if response.status_code == 404:
@@ -62,8 +62,16 @@ class GoogleDriveFileStore:
         # Google devuelve ETag en la respuesta HTTP. La versión se conserva
         # también como respaldo informativo.
         etag = response.headers.get("ETag")
-        version = payload.get("version")
-        return etag, str(version) if version is not None else None
+        version = "|".join(
+            str(payload.get(key) or "")
+            for key in ("modifiedTime", "md5Checksum", "version")
+        )
+        return etag, version
+
+    def get_version(self, path: str) -> str | None:
+        file_id = self._file_id(path)
+        _, version = self._metadata(file_id)
+        return version
 
     def read(self, path: str) -> FileVersion:
         file_id = self._file_id(path)

@@ -22,6 +22,11 @@ OFICIOS_HEADERS = ["ID", "Requerimiento", "Fecha", "Cortes", "Referencia", "Crea
 LOCAL_TZ = ZoneInfo("America/Mexico_City")
 
 
+def configure_timezone(timezone_name: str) -> None:
+    global LOCAL_TZ
+    LOCAL_TZ = ZoneInfo(timezone_name)
+
+
 def _load(data: bytes):
     return load_workbook(BytesIO(data))
 
