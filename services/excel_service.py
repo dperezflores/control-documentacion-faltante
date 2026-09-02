@@ -311,8 +311,17 @@ def document_history(data: bytes, requirement: str, contract: str) -> dict[str, 
             },
         )
         cut = row.get("Corte")
-        if str(cut) == "PENDIENTE":
+        cut_text = str(cut)
+        if cut_text == "PENDIENTE":
             entry["pending"] = True
+        elif cut_text.startswith("GENERAL:"):
+            try:
+                general_num = int(cut_text.split(":", 1)[1])
+                label = f"General {general_num}"
+                if label not in entry["cuts"]:
+                    entry["cuts"].append(label)
+            except (TypeError, ValueError):
+                pass
         else:
             try:
                 cut_num = int(cut)
@@ -321,7 +330,17 @@ def document_history(data: bytes, requirement: str, contract: str) -> dict[str, 
             except (TypeError, ValueError):
                 pass
     for entry in history.values():
-        entry["cuts"].sort()
+        def _sort_key(value):
+            if isinstance(value, int):
+                return (0, value)
+            text = str(value)
+            if text.startswith("General "):
+                try:
+                    return (1, int(text.split(" ", 1)[1]))
+                except ValueError:
+                    return (1, text)
+            return (2, text)
+        entry["cuts"].sort(key=_sort_key)
     return history
 
 
@@ -617,6 +636,216 @@ def delete_cut(data: bytes, requirement: str, cut_number: int) -> bytes:
             cuts.delete_rows(r, 1)
             deleted = True
             break
+    if not deleted:
+        raise ValueError("No se encontró el corte seleccionado.")
+    return _save(wb)
+
+
+def pending_summary_all(data: bytes) -> list[dict]:
+    result: list[dict] = []
+    for requirement in list_requirements(data):
+        result.extend(pending_summary(data, requirement))
+    return result
+
+
+def _general_cut_marker(cut_number: int) -> str:
+    return f"GENERAL:{int(cut_number)}"
+
+
+def list_general_cuts(data: bytes) -> list[dict]:
+    return list_cuts(data, "Todos")
+
+
+def general_cut_details(data: bytes, cut_number: int) -> list[dict]:
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    ws = wb[FALTANTES_SHEET]
+    h = _headers(ws)
+    marker = _general_cut_marker(cut_number)
+    result = []
+
+    for r in range(2, ws.max_row + 1):
+        if str(ws.cell(r, h["Corte"]).value) != marker:
+            continue
+        documento = ws.cell(r, h["Documento"]).value
+        especificacion = ws.cell(r, h["Especificacion"]).value if "Especificacion" in h else ""
+        result.append({
+            "id": ws.cell(r, h["ID"]).value,
+            "requerimiento": ws.cell(r, h["Requerimiento"]).value,
+            "contrato": ws.cell(r, h["Contrato"]).value,
+            "auditor": ws.cell(r, h["Auditor"]).value,
+            "codigo": ws.cell(r, h["Codigo_documento"]).value,
+            "documento": documento,
+            "especificacion": especificacion or "",
+            "solicitud": _effective_document(documento, especificacion),
+            "origen": _record_origin({
+                "Origen": ws.cell(r, h["Origen"]).value if "Origen" in h else "",
+                "Procedimiento": ws.cell(r, h["Procedimiento"]).value,
+            }),
+            "fecha": ws.cell(r, h["Fecha_deteccion"]).value,
+            "corte": int(cut_number),
+        })
+    return result
+
+
+def _update_general_cut_count(wb, cut_number: int) -> None:
+    falt = wb[FALTANTES_SHEET]
+    cuts = wb[CORTES_SHEET]
+    fh = _headers(falt)
+    ch = _headers(cuts)
+    marker = _general_cut_marker(cut_number)
+    count = 0
+
+    for r in range(2, falt.max_row + 1):
+        if str(falt.cell(r, fh["Corte"]).value) == marker:
+            count += 1
+
+    for r in range(2, cuts.max_row + 1):
+        if (
+            cuts.cell(r, ch["Requerimiento"]).value == "Todos"
+            and int(cuts.cell(r, ch["Corte"]).value) == int(cut_number)
+        ):
+            cuts.cell(r, ch["Documentos"]).value = count
+            break
+
+
+def create_general_cut(data: bytes, user: str, cut_date) -> bytes:
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    falt = wb[FALTANTES_SHEET]
+    cuts = wb[CORTES_SHEET]
+    fh = _headers(falt)
+    ch = _headers(cuts)
+
+    existing = [
+        int(cuts.cell(r, ch["Corte"]).value)
+        for r in range(2, cuts.max_row + 1)
+        if cuts.cell(r, ch["Requerimiento"]).value == "Todos"
+        and cuts.cell(r, ch["Corte"]).value
+    ]
+    next_cut = max(existing, default=0) + 1
+    marker = _general_cut_marker(next_cut)
+
+    manual_rows: list[tuple[str, dict]] = []
+    for requirement in list_requirements(data):
+        for row in _manual_pending_rows_from_wb(wb, requirement):
+            manual_rows.append((requirement, row))
+
+    for requirement, manual_row in manual_rows:
+        _append_manual_to_tech(wb, requirement, manual_row, marker)
+
+    affected = len(manual_rows)
+    for r in range(2, falt.max_row + 1):
+        if str(falt.cell(r, fh["Corte"]).value) == "PENDIENTE":
+            falt.cell(r, fh["Corte"]).value = marker
+            affected += 1
+
+    if affected == 0:
+        raise ValueError("No hay documentación pendiente para crear un corte.")
+
+    row = [None] * cuts.max_column
+    values = {
+        "ID": uuid4().hex,
+        "Requerimiento": "Todos",
+        "Corte": next_cut,
+        "Fecha": cut_date,
+        "Creado_por": user,
+        "Documentos": affected,
+    }
+    for name, value in values.items():
+        row[ch[name] - 1] = value
+    cuts.append(row)
+    return _save(wb)
+
+
+def move_records_to_general_cut(
+    data: bytes,
+    record_ids: Iterable[str],
+    cut_number: int,
+) -> bytes:
+    ids = {str(x) for x in record_ids}
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    falt = wb[FALTANTES_SHEET]
+    fh = _headers(falt)
+    marker = _general_cut_marker(cut_number)
+
+    manual_rows: dict[str, tuple[str, dict]] = {}
+    for requirement in list_requirements(data):
+        for row in _manual_pending_rows_from_wb(wb, requirement):
+            if row["id"] in ids:
+                manual_rows[row["id"]] = (requirement, row)
+
+    for requirement, manual_row in manual_rows.values():
+        _append_manual_to_tech(wb, requirement, manual_row, marker)
+
+    changed = len(manual_rows)
+    for r in range(2, falt.max_row + 1):
+        if (
+            str(falt.cell(r, fh["ID"]).value) in ids
+            and str(falt.cell(r, fh["Corte"]).value) == "PENDIENTE"
+        ):
+            falt.cell(r, fh["Corte"]).value = marker
+            changed += 1
+
+    if changed == 0:
+        raise ValueError("No se encontraron registros para agregar al corte.")
+
+    _update_general_cut_count(wb, cut_number)
+    return _save(wb)
+
+
+def remove_records_from_general_cut(
+    data: bytes,
+    record_ids: Iterable[str],
+    cut_number: int,
+) -> bytes:
+    ids = {str(x) for x in record_ids}
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    falt = wb[FALTANTES_SHEET]
+    fh = _headers(falt)
+    marker = _general_cut_marker(cut_number)
+    changed = 0
+
+    for r in range(2, falt.max_row + 1):
+        if (
+            str(falt.cell(r, fh["ID"]).value) in ids
+            and str(falt.cell(r, fh["Corte"]).value) == marker
+        ):
+            falt.cell(r, fh["Corte"]).value = "PENDIENTE"
+            changed += 1
+
+    if changed == 0:
+        raise ValueError("No se encontraron documentos para retirar del corte.")
+
+    _update_general_cut_count(wb, cut_number)
+    return _save(wb)
+
+
+def delete_general_cut(data: bytes, cut_number: int) -> bytes:
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    falt = wb[FALTANTES_SHEET]
+    cuts = wb[CORTES_SHEET]
+    fh = _headers(falt)
+    ch = _headers(cuts)
+    marker = _general_cut_marker(cut_number)
+
+    for r in range(2, falt.max_row + 1):
+        if str(falt.cell(r, fh["Corte"]).value) == marker:
+            falt.cell(r, fh["Corte"]).value = "PENDIENTE"
+
+    deleted = False
+    for r in range(2, cuts.max_row + 1):
+        if (
+            cuts.cell(r, ch["Requerimiento"]).value == "Todos"
+            and int(cuts.cell(r, ch["Corte"]).value) == int(cut_number)
+        ):
+            cuts.delete_rows(r, 1)
+            deleted = True
+            break
+
     if not deleted:
         raise ValueError("No se encontró el corte seleccionado.")
     return _save(wb)
