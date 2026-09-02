@@ -50,8 +50,8 @@ class AppState:
         return current.content
 
     def _load_catalog(self, force: bool = False) -> bytes:
+        remote_version = self._remote_version(CATALOG_FILE)
         if not force:
-            remote_version = self._remote_version(CATALOG_FILE)
             cached_bytes = self.session.get("catalog_bytes")
             cached_version = self.session.get("catalog_version")
             if (
@@ -64,8 +64,7 @@ class AppState:
         current = self.store.read(CATALOG_FILE)
         self.session.catalog_bytes = current.content
         self.session.catalog_version = (
-            remote_version if not force and remote_version is not None
-            else current.version
+            remote_version if remote_version is not None else current.version
         )
         return current.content
 
