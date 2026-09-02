@@ -86,7 +86,12 @@ def _record_origin(row: dict) -> str:
 
 def _split_visible_documents(value) -> list[str]:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return [line.strip(" •\t") for line in text.split("\n") if line.strip(" •\t")]
+    lines = [
+        line.strip(" •\t")
+        for line in text.split("\n")
+        if line.strip(" •\t")
+    ]
+    return list(dict.fromkeys(lines))
 
 
 def _manual_id(requirement: str, contract: str, text: str) -> str:
