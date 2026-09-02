@@ -7,6 +7,7 @@ from openpyxl import load_workbook
 
 from services.excel_service import (
     FALTANTES_SHEET,
+    _effective_document,
     _headers,
     _normalize_single_line_text,
     _rebuild_visible_cell,
@@ -16,11 +17,6 @@ from services.excel_service import (
 
 DEFAULT_INPUT = Path("data/Documentacion_faltante.xlsx")
 DEFAULT_OUTPUT = Path("Documentacion_faltante_corregido.xlsx")
-
-
-def _raw_multiline_parts(value) -> list[str]:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    return [line.strip() for line in text.split("\n") if line.strip()]
 
 
 def repair_multiline_documents(input_path: Path, output_path: Path) -> int:
@@ -65,12 +61,17 @@ def repair_multiline_documents(input_path: Path, output_path: Path) -> int:
         affected_contracts.add(key)
         ghost_parts = ghost_parts_by_contract.setdefault(key, set())
 
+        # Los "fantasmas" son exactamente las líneas que produjo la celda
+        # visible a partir del texto técnico ANTES de normalizarlo. Tomamos el
+        # documento efectivo completo (Documento + Especificacion) y lo partimos
+        # con la misma regla que usa la aplicación al leer la celda visible.
+        old_effective = _effective_document(document, specification)
+        ghost_parts.update(_split_visible_documents(old_effective))
+
         if "Documento" in changed_fields:
-            ghost_parts.update(_raw_multiline_parts(document))
             tech.cell(row, headers["Documento"]).value = new_document
 
         if "Especificacion" in changed_fields:
-            ghost_parts.update(_raw_multiline_parts(specification))
             tech.cell(row, headers["Especificacion"]).value = new_specification
 
         normalized_rows.append(
