@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import monotonic
 from typing import Callable
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,7 @@ from services.github_service import build_store
 
 DATA_FILE = "data/Documentacion_faltante.xlsx"
 CATALOG_FILE = "data/Codificacion_documentos.xlsx"
+REMOTE_CHECK_INTERVAL_SECONDS = 20.0
 
 
 class AppState:
@@ -33,9 +35,21 @@ class AppState:
             return None
         return getter(path)
 
-    def _load_operational(self) -> bytes:
-        remote_version = self._remote_version(DATA_FILE)
+    def _load_operational(self, force: bool = False) -> bytes:
         cached_bytes = self.session.get("operational_bytes")
+        checked_at = self.session.get("operational_version_checked_at")
+        now = monotonic()
+
+        if (
+            not force
+            and cached_bytes is not None
+            and checked_at is not None
+            and now - float(checked_at) < REMOTE_CHECK_INTERVAL_SECONDS
+        ):
+            return cached_bytes
+
+        remote_version = self._remote_version(DATA_FILE)
+        self.session.operational_version_checked_at = now
         cached_version = self.session.get("operational_version")
 
         if (
@@ -53,16 +67,28 @@ class AppState:
         return current.content
 
     def _load_catalog(self, force: bool = False) -> bytes:
+        cached_bytes = self.session.get("catalog_bytes")
+        checked_at = self.session.get("catalog_version_checked_at")
+        now = monotonic()
+
+        if (
+            not force
+            and cached_bytes is not None
+            and checked_at is not None
+            and now - float(checked_at) < REMOTE_CHECK_INTERVAL_SECONDS
+        ):
+            return cached_bytes
+
         remote_version = self._remote_version(CATALOG_FILE)
-        if not force:
-            cached_bytes = self.session.get("catalog_bytes")
-            cached_version = self.session.get("catalog_version")
-            if (
-                cached_bytes is not None
-                and remote_version is not None
-                and cached_version == remote_version
-            ):
-                return cached_bytes
+        self.session.catalog_version_checked_at = now
+        cached_version = self.session.get("catalog_version")
+
+        if (
+            cached_bytes is not None
+            and remote_version is not None
+            and cached_version == remote_version
+        ):
+            return cached_bytes
 
         current = self.store.read(CATALOG_FILE)
         self.session.catalog_bytes = current.content
@@ -73,7 +99,7 @@ class AppState:
 
     def load_files(self, force: bool = False) -> tuple[bytes, bytes] | None:
         try:
-            operational = self._load_operational()
+            operational = self._load_operational(force=force)
             catalog = self._load_catalog(force=force)
             return operational, catalog
         except FileNotFoundError:
@@ -85,10 +111,12 @@ class AppState:
     def persist(self, mutator: Callable[[bytes], bytes], message: str) -> bytes:
         updated = self.store.mutate(DATA_FILE, mutator, message)
         self.session.operational_bytes = updated
-        try:
-            self.session.operational_version = self._remote_version(DATA_FILE)
-        except Exception:
-            self.session.pop("operational_version", None)
+        self.session.operational_version_checked_at = monotonic()
+
+        # mutate() ya escribió estos bytes como la versión más reciente.
+        # No hacemos otra llamada HTTP aquí. Al vencer el intervalo de 20 s,
+        # la siguiente verificación remota volverá a sincronizar la versión.
+        self.session.pop("operational_version", None)
         return updated
 
     def initialize_files(self, operational: bytes, catalog: bytes) -> None:
@@ -115,3 +143,7 @@ class AppState:
             self.session.catalog_version = self._remote_version(CATALOG_FILE)
         except Exception:
             self.session.pop("catalog_version", None)
+
+        now = monotonic()
+        self.session.operational_version_checked_at = now
+        self.session.catalog_version_checked_at = now
