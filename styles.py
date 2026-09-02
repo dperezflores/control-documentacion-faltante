@@ -18,6 +18,7 @@ def get_custom_css() -> str:
     .stApp {
         background: var(--inst-bg);
         color: var(--inst-charcoal);
+        color-scheme: light;
     }
 
     .block-container {
@@ -148,6 +149,52 @@ def get_custom_css() -> str:
     .stTextArea:focus-within textarea {
         border-color: var(--inst-orange) !important;
         box-shadow: 0 0 0 2px rgba(255,94,18,.10) !important;
+    }
+
+
+    /* Forzar tema claro institucional aunque el sistema/navegador esté en modo oscuro */
+    [data-testid="stMain"] [data-testid="stWidgetLabel"],
+    [data-testid="stMain"] [data-testid="stWidgetLabel"] p,
+    [data-testid="stMain"] [data-testid="stWidgetLabel"] span,
+    [data-testid="stMain"] .stTextInput label,
+    [data-testid="stMain"] .stTextInput label p,
+    [data-testid="stMain"] .stTextArea label,
+    [data-testid="stMain"] .stTextArea label p,
+    [data-testid="stMain"] .stMultiSelect label,
+    [data-testid="stMain"] .stMultiSelect label p,
+    [data-testid="stMain"] .stSelectbox label,
+    [data-testid="stMain"] .stSelectbox label p,
+    [data-testid="stMain"] .stDateInput label,
+    [data-testid="stMain"] .stDateInput label p {
+        color: var(--inst-charcoal) !important;
+    }
+
+    [data-testid="stMain"] [data-testid="stTooltipIcon"],
+    [data-testid="stMain"] [data-testid="stTooltipIcon"] *,
+    [data-testid="stMain"] [data-testid="stWidgetLabel"] svg {
+        color: var(--inst-charcoal) !important;
+        fill: currentColor !important;
+    }
+
+    [data-testid="stMain"] .stTextInput input::placeholder,
+    [data-testid="stMain"] .stDateInput input::placeholder,
+    [data-testid="stMain"] .stTextArea textarea::placeholder,
+    [data-testid="stMain"] [data-baseweb="select"] input::placeholder {
+        color: #8A929A !important;
+        opacity: 1 !important;
+    }
+
+    [data-testid="stMain"] [data-testid="stCaptionContainer"],
+    [data-testid="stMain"] [data-testid="stCaptionContainer"] p,
+    [data-testid="stMain"] [data-testid="stCaptionContainer"] span {
+        color: #7A8288 !important;
+    }
+
+    [data-testid="stMain"] h1,
+    [data-testid="stMain"] h2,
+    [data-testid="stMain"] h3,
+    [data-testid="stMain"] h4 {
+        color: var(--inst-navy) !important;
     }
 
     /* Botones */
