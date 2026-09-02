@@ -68,6 +68,18 @@ section = st.sidebar.radio(
     ["Capturar faltantes", "Cortes", "Generar oficio"],
     label_visibility="collapsed",
 )
+
+previous_section = st.session_state.get("_previous_active_section")
+if section == "Generar oficio" and previous_section != "Generar oficio":
+    st.session_state["_generar_oficio_authorized"] = False
+    st.session_state["_generar_oficio_password"] = ""
+    st.session_state["_generar_oficio_password_error"] = False
+elif section != "Generar oficio":
+    st.session_state["_generar_oficio_authorized"] = False
+    st.session_state["_generar_oficio_password"] = ""
+    st.session_state["_generar_oficio_password_error"] = False
+st.session_state["_previous_active_section"] = section
+
 st.sidebar.divider()
 st.sidebar.caption(f"Almacenamiento: {state.storage_mode}")
 if st.sidebar.button("Actualizar datos"):

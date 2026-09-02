@@ -805,14 +805,14 @@ class GenerarOficioView(BaseView):
     @staticmethod
     def _authorize_once() -> None:
         password = st.session_state.get("_generar_oficio_password", "")
-        st.session_state["_generar_oficio_authorized_once"] = (
-            password == APP_PASSWORD
-        )
+        authorized = password == APP_PASSWORD
+        st.session_state["_generar_oficio_authorized"] = authorized
+        st.session_state["_generar_oficio_password_error"] = not authorized
         st.session_state["_generar_oficio_password"] = ""
 
     def render(self) -> None:
         authorized = bool(
-            st.session_state.pop("_generar_oficio_authorized_once", False)
+            st.session_state.get("_generar_oficio_authorized", False)
         )
         if not authorized:
             st.text_input(
@@ -821,6 +821,8 @@ class GenerarOficioView(BaseView):
                 key="_generar_oficio_password",
                 on_change=self._authorize_once,
             )
+            if st.session_state.get("_generar_oficio_password_error", False):
+                st.error("Contraseña incorrecta.")
             return
 
         requirement = self.requirement
