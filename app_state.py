@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import streamlit as st
 
+from services.excel_service import configure_timezone
 from services.github_service import build_store
 
 
@@ -16,9 +17,11 @@ class AppState:
     def __init__(self, secrets: dict | None = None) -> None:
         self.secrets = secrets or {}
         self.store, self.storage_mode = build_store(self.secrets)
-        self.timezone = ZoneInfo(
-            str(self.secrets.get("timezone", "America/Mexico_City"))
+        timezone_name = str(
+            self.secrets.get("timezone", "America/Mexico_City")
         )
+        self.timezone = ZoneInfo(timezone_name)
+        configure_timezone(timezone_name)
 
     @property
     def session(self):
