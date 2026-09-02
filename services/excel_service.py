@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from functools import lru_cache
 from hashlib import sha1
 from io import BytesIO
 from typing import Iterable
@@ -29,6 +30,11 @@ def configure_timezone(timezone_name: str) -> None:
 
 def _load(data: bytes):
     return load_workbook(BytesIO(data))
+
+
+@lru_cache(maxsize=8)
+def _load_cached(data: bytes):
+    return _load(data)
 
 
 def _save(wb) -> bytes:
@@ -151,7 +157,7 @@ def _manual_pending_rows_from_wb(wb, requirement: str) -> list[dict]:
 
 
 def manual_visible_documents(data: bytes, requirement: str, contract: str) -> list[str]:
-    wb = _load(data)
+    wb = _load_cached(data)
     return [
         row["solicitud"]
         for row in _manual_pending_rows_from_wb(wb, requirement)
@@ -248,39 +254,42 @@ def _update_cut_count(wb, requirement: str, cut_number: int) -> None:
 
 
 def list_requirements(data: bytes) -> list[str]:
-    wb = _load(data)
+    wb = _load_cached(data)
     return [s for s in wb.sheetnames if s.startswith("Req_")]
 
 
 def list_contracts(data: bytes, requirement: str) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     ws = wb[requirement]
     rows = []
-    for row in range(8, ws.max_row + 1):
-        number = ws.cell(row, 1).value
-        contract = ws.cell(row, 2).value
+    for row_number, values in enumerate(
+        ws.iter_rows(min_row=8, max_col=7, values_only=True),
+        start=8,
+    ):
+        number = values[0]
+        contract = values[1]
         if number is None or not contract:
             continue
         rows.append({
-            "row": row,
+            "row": row_number,
             "numero": number,
             "contrato": str(contract).strip(),
-            "obra": ws.cell(row, 3).value or "",
-            "contratista": ws.cell(row, 4).value or "",
-            "faltantes_visible": ws.cell(row, 5).value or "",
-            "auditor": ws.cell(row, 6).value or "",
-            "ulop": ws.cell(row, 7).value or "",
+            "obra": values[2] or "",
+            "contratista": values[3] or "",
+            "faltantes_visible": values[4] or "",
+            "auditor": values[5] or "",
+            "ulop": values[6] or "",
         })
     return rows
 
 
 def load_catalog(data: bytes, procedure: str) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     ws = wb[procedure]
     items = []
-    for row in range(3, ws.max_row + 1):
-        code = ws.cell(row, 1).value
-        concept = ws.cell(row, 2).value
+    for values in ws.iter_rows(min_row=3, max_col=2, values_only=True):
+        code = values[0]
+        concept = values[1]
         if not code or not concept:
             continue
         prefix = str(code).split("_")[0]
@@ -289,18 +298,25 @@ def load_catalog(data: bytes, procedure: str) -> list[dict]:
 
 
 def get_faltantes(data: bytes, requirement: str, contract: str | None = None) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     _ensure_technical_sheets(wb)
     ws = wb[FALTANTES_SHEET]
     h = _headers(ws)
     result = []
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(r, h["Requerimiento"]).value != requirement:
+    for row_number, values in enumerate(
+        ws.iter_rows(min_row=2, values_only=True),
+        start=2,
+    ):
+        if values[h["Requerimiento"] - 1] != requirement:
             continue
-        if contract is not None and str(ws.cell(r, h["Contrato"]).value or "").strip() != contract:
+        current_contract = str(values[h["Contrato"] - 1] or "").strip()
+        if contract is not None and current_contract != contract:
             continue
-        row = {name: ws.cell(r, col).value for name, col in h.items()}
-        row["_row"] = r
+        row = {
+            name: values[col - 1] if col - 1 < len(values) else None
+            for name, col in h.items()
+        }
+        row["_row"] = row_number
         row["Documento_efectivo"] = _effective_document(row.get("Documento"), row.get("Especificacion"))
         result.append(row)
     return result
@@ -395,32 +411,32 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
 
 
 def pending_summary(data: bytes, requirement: str) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     _ensure_technical_sheets(wb)
     tech = wb[FALTANTES_SHEET]
     h = _headers(tech)
     result = []
 
-    for r in range(2, tech.max_row + 1):
-        if tech.cell(r, h["Requerimiento"]).value != requirement:
+    for values in tech.iter_rows(min_row=2, values_only=True):
+        if values[h["Requerimiento"] - 1] != requirement:
             continue
-        if str(tech.cell(r, h["Corte"]).value) != "PENDIENTE":
+        if str(values[h["Corte"] - 1]) != "PENDIENTE":
             continue
-        documento = tech.cell(r, h["Documento"]).value
-        especificacion = tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else ""
+        documento = values[h["Documento"] - 1]
+        especificacion = values[h["Especificacion"] - 1] if "Especificacion" in h else ""
         result.append({
-            "id": tech.cell(r, h["ID"]).value,
+            "id": values[h["ID"] - 1],
             "requerimiento": requirement,
-            "contrato": tech.cell(r, h["Contrato"]).value,
-            "codigo": tech.cell(r, h["Codigo_documento"]).value,
+            "contrato": values[h["Contrato"] - 1],
+            "codigo": values[h["Codigo_documento"] - 1],
             "documento": documento,
             "especificacion": especificacion or "",
             "solicitud": _effective_document(documento, especificacion),
-            "fecha": tech.cell(r, h["Fecha_deteccion"]).value,
-            "auditor": tech.cell(r, h["Auditor"]).value,
+            "fecha": values[h["Fecha_deteccion"] - 1],
+            "auditor": values[h["Auditor"] - 1],
             "origen": _record_origin({
-                "Origen": tech.cell(r, h["Origen"]).value if "Origen" in h else "",
-                "Procedimiento": tech.cell(r, h["Procedimiento"]).value,
+                "Origen": values[h["Origen"] - 1] if "Origen" in h else "",
+                "Procedimiento": values[h["Procedimiento"] - 1],
             }),
         })
 
@@ -429,19 +445,19 @@ def pending_summary(data: bytes, requirement: str) -> list[dict]:
 
 
 def list_cuts(data: bytes, requirement: str) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     _ensure_technical_sheets(wb)
     ws = wb[CORTES_SHEET]
     h = _headers(ws)
     result = []
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(r, h["Requerimiento"]).value == requirement:
+    for values in ws.iter_rows(min_row=2, values_only=True):
+        if values[h["Requerimiento"] - 1] == requirement:
             result.append({
-                "id": ws.cell(r, h["ID"]).value,
-                "corte": int(ws.cell(r, h["Corte"]).value),
-                "fecha": ws.cell(r, h["Fecha"]).value,
-                "creado_por": ws.cell(r, h["Creado_por"]).value,
-                "documentos": int(ws.cell(r, h["Documentos"]).value or 0),
+                "id": values[h["ID"] - 1],
+                "corte": int(values[h["Corte"] - 1]),
+                "fecha": values[h["Fecha"] - 1],
+                "creado_por": values[h["Creado_por"] - 1],
+                "documentos": int(values[h["Documentos"] - 1] or 0),
             })
     return sorted(result, key=lambda x: x["corte"])
 
@@ -668,32 +684,32 @@ def list_general_cuts(data: bytes) -> list[dict]:
 
 
 def general_cut_details(data: bytes, cut_number: int) -> list[dict]:
-    wb = _load(data)
+    wb = _load_cached(data)
     _ensure_technical_sheets(wb)
     ws = wb[FALTANTES_SHEET]
     h = _headers(ws)
     marker = _general_cut_marker(cut_number)
     result = []
 
-    for r in range(2, ws.max_row + 1):
-        if str(ws.cell(r, h["Corte"]).value) != marker:
+    for values in ws.iter_rows(min_row=2, values_only=True):
+        if str(values[h["Corte"] - 1]) != marker:
             continue
-        documento = ws.cell(r, h["Documento"]).value
-        especificacion = ws.cell(r, h["Especificacion"]).value if "Especificacion" in h else ""
+        documento = values[h["Documento"] - 1]
+        especificacion = values[h["Especificacion"] - 1] if "Especificacion" in h else ""
         result.append({
-            "id": ws.cell(r, h["ID"]).value,
-            "requerimiento": ws.cell(r, h["Requerimiento"]).value,
-            "contrato": ws.cell(r, h["Contrato"]).value,
-            "auditor": ws.cell(r, h["Auditor"]).value,
-            "codigo": ws.cell(r, h["Codigo_documento"]).value,
+            "id": values[h["ID"] - 1],
+            "requerimiento": values[h["Requerimiento"] - 1],
+            "contrato": values[h["Contrato"] - 1],
+            "auditor": values[h["Auditor"] - 1],
+            "codigo": values[h["Codigo_documento"] - 1],
             "documento": documento,
             "especificacion": especificacion or "",
             "solicitud": _effective_document(documento, especificacion),
             "origen": _record_origin({
-                "Origen": ws.cell(r, h["Origen"]).value if "Origen" in h else "",
-                "Procedimiento": ws.cell(r, h["Procedimiento"]).value,
+                "Origen": values[h["Origen"] - 1] if "Origen" in h else "",
+                "Procedimiento": values[h["Procedimiento"] - 1],
             }),
-            "fecha": ws.cell(r, h["Fecha_deteccion"]).value,
+            "fecha": values[h["Fecha_deteccion"] - 1],
             "corte": int(cut_number),
         })
     return result
