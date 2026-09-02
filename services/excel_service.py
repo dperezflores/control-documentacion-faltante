@@ -68,6 +68,12 @@ def _ensure_technical_sheets(wb) -> None:
         ws.sheet_state = "hidden"
 
 
+def _normalize_single_line_text(value) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    parts = [line.strip() for line in text.split("\n") if line.strip()]
+    return " | ".join(parts)
+
+
 def _effective_document(documento, especificacion) -> str:
     doc = str(documento or "").strip()
     spec = str(especificacion or "").strip()
@@ -209,7 +215,7 @@ def _append_manual_to_tech(wb, requirement: str, manual_row: dict, cut_value) ->
         "Contrato": manual_row["contrato"],
         "Procedimiento": "MANUAL",
         "Codigo_documento": f"MANUAL_{manual_row['id'].split('::')[-1]}",
-        "Documento": manual_row["solicitud"],
+        "Documento": _normalize_single_line_text(manual_row["solicitud"]),
         "Especificacion": "",
         "Fecha_deteccion": datetime.now(LOCAL_TZ).replace(tzinfo=None, microsecond=0),
         "Auditor": manual_row.get("auditor") or "",
@@ -372,8 +378,8 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
             "Contrato": contract,
             "Procedimiento": procedure,
             "Codigo_documento": item["codigo"],
-            "Documento": item["documento"],
-            "Especificacion": str(item.get("especificacion") or "").strip(),
+            "Documento": _normalize_single_line_text(item["documento"]),
+            "Especificacion": _normalize_single_line_text(item.get("especificacion")),
             "Fecha_deteccion": now,
             "Auditor": auditor,
             "Corte": "PENDIENTE",
