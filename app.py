@@ -80,7 +80,12 @@ if not requirements:
     st.warning("No se encontraron hojas de requerimiento.")
     st.stop()
 
-requirement = st.selectbox("Requerimiento", requirements)
+requirement_options = (
+    ["Todos"] + requirements
+    if section == "Cortes"
+    else requirements
+)
+requirement = st.selectbox("Requerimiento", requirement_options)
 
 views = {
     "Capturar faltantes": CapturaFaltantesView,
