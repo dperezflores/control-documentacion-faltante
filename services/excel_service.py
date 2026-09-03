@@ -371,7 +371,15 @@ def document_history(data: bytes, requirement: str, contract: str) -> dict[str, 
     return history
 
 
-def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, auditor: str, selected: Iterable[dict]) -> bytes:
+def add_faltantes(
+    data: bytes,
+    requirement: str,
+    contract: str,
+    procedure: str,
+    auditor: str,
+    selected: Iterable[dict],
+    contract_row: int | None = None,
+) -> bytes:
     wb = _load(data)
     _ensure_technical_sheets(wb)
     tech = wb[FALTANTES_SHEET]
@@ -405,6 +413,12 @@ def add_faltantes(data: bytes, requirement: str, contract: str, procedure: str, 
             row[h[name] - 1] = value
         tech.append(row)
         pending_codes.add(item["codigo"])
+
+    if contract_row is not None:
+        requirement_ws = wb[requirement]
+        auditor_cell = requirement_ws.cell(contract_row, 6)
+        if not str(auditor_cell.value or "").strip():
+            auditor_cell.value = auditor
 
     _rebuild_visible_cell(wb, requirement, contract)
     return _save(wb)
