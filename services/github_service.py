@@ -39,9 +39,24 @@ class LocalFileStore:
         p.write_bytes(content)
         return content
 
-    def mutate(self, path: str, mutator: Callable[[bytes], bytes], message: str) -> bytes:
+    def mutate(
+        self,
+        path: str,
+        mutator: Callable[[bytes], bytes],
+        message: str,
+        cached_content: bytes | None = None,
+        cached_version: str | None = None,
+    ) -> bytes:
         p = Path(path)
-        current = p.read_bytes()
+        current_version = self.get_version(path)
+        if (
+            cached_content is not None
+            and cached_version is not None
+            and current_version == cached_version
+        ):
+            current = cached_content
+        else:
+            current = p.read_bytes()
         updated = mutator(current)
         p.write_bytes(updated)
         return updated
@@ -106,29 +121,68 @@ class GitHubFileStore:
         response.raise_for_status()
         return content
 
-    def mutate(self, path: str, mutator: Callable[[bytes], bytes], message: str) -> bytes:
+    def mutate(
+        self,
+        path: str,
+        mutator: Callable[[bytes], bytes],
+        message: str,
+        cached_content: bytes | None = None,
+        cached_version: str | None = None,
+    ) -> bytes:
         last_error: Exception | None = None
+        cache_is_trusted = cached_content is not None and cached_version is not None
+        self.last_mutation_version: str | None = None
+
         for _ in range(3):
-            current = self.read(path)
-            updated = mutator(current.content)
+            # GitHub necesita el blob SHA actual para el PUT. La consulta al
+            # endpoint contents proporciona ese SHA y sirve también para
+            # validar que la versión remota sigue siendo la esperada.
+            response = requests.get(
+                f"{self.base_url}/{path}",
+                headers=self.headers,
+                params={"ref": self.branch},
+                timeout=30,
+            )
+            if response.status_code == 404:
+                raise FileNotFoundError(path)
+            response.raise_for_status()
+            payload_current = response.json()
+            blob_sha = str(payload_current["sha"])
+
+            if cache_is_trusted:
+                remote_version = self.get_version(path)
+            else:
+                remote_version = None
+
+            if cache_is_trusted and remote_version == cached_version:
+                current_content = cached_content
+            else:
+                current_content = base64.b64decode(payload_current["content"])
+
+            updated = mutator(current_content)
             payload = {
                 "message": message,
                 "content": base64.b64encode(updated).decode("ascii"),
-                "sha": current.version,
+                "sha": blob_sha,
                 "branch": self.branch,
             }
-            response = requests.put(
+            write_response = requests.put(
                 f"{self.base_url}/{path}",
                 headers=self.headers,
                 json=payload,
                 timeout=60,
             )
-            if response.status_code in (200, 201):
+            if write_response.status_code in (200, 201):
+                body = write_response.json()
+                self.last_mutation_version = str(
+                    body.get("commit", {}).get("sha") or ""
+                ) or None
                 return updated
-            if response.status_code in (409, 422):
+            if write_response.status_code in (409, 422):
                 last_error = StorageConflict("El archivo cambió mientras se guardaba; reintentando.")
+                cache_is_trusted = False
                 continue
-            response.raise_for_status()
+            write_response.raise_for_status()
         raise last_error or StorageConflict("No fue posible guardar después de varios intentos.")
 
 
