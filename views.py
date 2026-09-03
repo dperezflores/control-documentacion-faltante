@@ -249,6 +249,23 @@ class CapturaFaltantesView(BaseView):
 
 
 class CortesView(BaseView):
+    def _detail_data_version(self):
+        return (
+            self.state.session.get("operational_version")
+            or hash(self.operational)
+        )
+
+    def _get_cached_cut_details(self, cache_key: str, loader):
+        version = self._detail_data_version()
+        cached = self.state.session.get(cache_key)
+        if not cached or cached.get("version") != version:
+            cached = {
+                "version": version,
+                "details": loader(),
+            }
+            self.state.session[cache_key] = cached
+        return cached["details"]
+
     def _show_create_cut_dialog(self, cut_user: str, cut_date) -> None:
         requirement = self.requirement
 
@@ -314,48 +331,62 @@ class CortesView(BaseView):
                 with st.expander(
                     f"Corte {cut['corte']} · {cut['fecha']} · {cut['documentos']} documento(s) · {cut['creado_por']}"
                 ):
-                    details = general_cut_details(operational, cut["corte"])
-                    if details:
-                        display_rows = [{
-                            "Requerimiento": x["requerimiento"],
-                            "Contrato": x["contrato"],
-                            "Auditor": x["auditor"],
-                            "Solicitud": x["solicitud"],
-                            "Origen": x.get("origen", "Aplicación"),
-                            "Documento catálogo": x["documento"],
-                            "Especificación": x["especificacion"],
-                        } for x in details]
-                        st.dataframe(display_rows, use_container_width=True, hide_index=True)
+                    detail_shown_key = f"detail_shown_general_{cut['corte']}"
+                    detail_cache_key = f"detail_cache_general_{cut['corte']}"
 
-                        detail_options = {
-                            f"{x['requerimiento']} · {x['contrato']} · {x['solicitud']}": x["id"]
-                            for x in details
-                        }
-                        to_remove = st.multiselect(
-                            "Retirar documentos de este corte",
-                            list(detail_options.keys()),
-                            key=f"remove_general_cut_{cut['corte']}",
-                            placeholder="Seleccionar documentos",
-                        )
+                    if not self.state.session.get(detail_shown_key, False):
                         if st.button(
-                            "Retirar seleccionados del corte",
-                            key=f"remove_general_cut_btn_{cut['corte']}",
-                            disabled=not to_remove,
+                            "Ver detalle de este corte",
+                            key=f"load_detail_general_{cut['corte']}",
                         ):
-                            ids = [detail_options[x] for x in to_remove]
-                            try:
-                                self.persist(
-                                    lambda latest: remove_records_from_general_cut(
-                                        latest, ids, cut["corte"]
-                                    ),
-                                    f"Retirar documentos Corte general {cut['corte']}",
-                                )
-                                st.success("Los documentos fueron retirados del corte y regresaron a documentación pendiente.")
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(f"No fue posible retirar los documentos: {exc}")
-                    else:
-                        st.info("Este corte no contiene documentos.")
+                            self.state.session[detail_shown_key] = True
+
+                    if self.state.session.get(detail_shown_key, False):
+                        details = self._get_cached_cut_details(
+                            detail_cache_key,
+                            lambda: general_cut_details(operational, cut["corte"]),
+                        )
+                        if details:
+                            display_rows = [{
+                                "Requerimiento": x["requerimiento"],
+                                "Contrato": x["contrato"],
+                                "Auditor": x["auditor"],
+                                "Solicitud": x["solicitud"],
+                                "Origen": x.get("origen", "Aplicación"),
+                                "Documento catálogo": x["documento"],
+                                "Especificación": x["especificacion"],
+                            } for x in details]
+                            st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+                            detail_options = {
+                                f"{x['requerimiento']} · {x['contrato']} · {x['solicitud']}": x["id"]
+                                for x in details
+                            }
+                            to_remove = st.multiselect(
+                                "Retirar documentos de este corte",
+                                list(detail_options.keys()),
+                                key=f"remove_general_cut_{cut['corte']}",
+                                placeholder="Seleccionar documentos",
+                            )
+                            if st.button(
+                                "Retirar seleccionados del corte",
+                                key=f"remove_general_cut_btn_{cut['corte']}",
+                                disabled=not to_remove,
+                            ):
+                                ids = [detail_options[x] for x in to_remove]
+                                try:
+                                    self.persist(
+                                        lambda latest: remove_records_from_general_cut(
+                                            latest, ids, cut["corte"]
+                                        ),
+                                        f"Retirar documentos Corte general {cut['corte']}",
+                                    )
+                                    st.success("Los documentos fueron retirados del corte y regresaron a documentación pendiente.")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"No fue posible retirar los documentos: {exc}")
+                        else:
+                            st.info("Este corte no contiene documentos.")
 
                     if pending_all:
                         pending_options = {
@@ -574,47 +605,61 @@ class CortesView(BaseView):
                 with st.expander(
                     f"Corte {cut['corte']} · {cut['fecha']} · {cut['documentos']} documento(s) · {cut['creado_por']}"
                 ):
-                    details = cut_details(operational, requirement, cut["corte"])
-                    if details:
-                        display_rows = [{
-                            "Requerimiento": x["requerimiento"],
-                            "Contrato": x["contrato"],
-                            "Auditor": x["auditor"],
-                            "Solicitud": x["solicitud"],
-                            "Origen": x.get("origen", "Aplicación"),
-                            "Documento catálogo": x["documento"],
-                            "Especificación": x["especificacion"],
-                        } for x in details]
-                        st.dataframe(display_rows, use_container_width=True, hide_index=True)
+                    detail_shown_key = f"detail_shown_{requirement}_{cut['corte']}"
+                    detail_cache_key = f"detail_cache_{requirement}_{cut['corte']}"
 
-                        detail_options = {
-                            f"{x['contrato']} · {x['solicitud']}": x["id"] for x in details
-                        }
-                        to_remove = st.multiselect(
-                            "Retirar documentos de este corte",
-                            list(detail_options.keys()),
-                            key=f"remove_cut_{cut['corte']}",
-                            placeholder="Seleccionar documentos",
-                        )
+                    if not self.state.session.get(detail_shown_key, False):
                         if st.button(
-                            "Retirar seleccionados del corte",
-                            key=f"remove_cut_btn_{cut['corte']}",
-                            disabled=not to_remove,
+                            "Ver detalle de este corte",
+                            key=f"load_detail_{requirement}_{cut['corte']}",
                         ):
-                            ids = [detail_options[x] for x in to_remove]
-                            try:
-                                self.persist(
-                                    lambda latest: remove_records_from_cut(
-                                        latest, requirement, ids, cut["corte"]
-                                    ),
-                                    f"Retirar documentos Corte {cut['corte']} · {requirement}",
-                                )
-                                st.success("Los documentos fueron retirados del corte y regresaron a documentación pendiente.")
-                                st.rerun()
-                            except Exception as exc:
-                                st.error(f"No fue posible retirar los documentos: {exc}")
-                    else:
-                        st.info("Este corte no contiene documentos.")
+                            self.state.session[detail_shown_key] = True
+
+                    if self.state.session.get(detail_shown_key, False):
+                        details = self._get_cached_cut_details(
+                            detail_cache_key,
+                            lambda: cut_details(operational, requirement, cut["corte"]),
+                        )
+                        if details:
+                            display_rows = [{
+                                "Requerimiento": x["requerimiento"],
+                                "Contrato": x["contrato"],
+                                "Auditor": x["auditor"],
+                                "Solicitud": x["solicitud"],
+                                "Origen": x.get("origen", "Aplicación"),
+                                "Documento catálogo": x["documento"],
+                                "Especificación": x["especificacion"],
+                            } for x in details]
+                            st.dataframe(display_rows, use_container_width=True, hide_index=True)
+
+                            detail_options = {
+                                f"{x['contrato']} · {x['solicitud']}": x["id"] for x in details
+                            }
+                            to_remove = st.multiselect(
+                                "Retirar documentos de este corte",
+                                list(detail_options.keys()),
+                                key=f"remove_cut_{cut['corte']}",
+                                placeholder="Seleccionar documentos",
+                            )
+                            if st.button(
+                                "Retirar seleccionados del corte",
+                                key=f"remove_cut_btn_{cut['corte']}",
+                                disabled=not to_remove,
+                            ):
+                                ids = [detail_options[x] for x in to_remove]
+                                try:
+                                    self.persist(
+                                        lambda latest: remove_records_from_cut(
+                                            latest, requirement, ids, cut["corte"]
+                                        ),
+                                        f"Retirar documentos Corte {cut['corte']} · {requirement}",
+                                    )
+                                    st.success("Los documentos fueron retirados del corte y regresaron a documentación pendiente.")
+                                    st.rerun()
+                                except Exception as exc:
+                                    st.error(f"No fue posible retirar los documentos: {exc}")
+                        else:
+                            st.info("Este corte no contiene documentos.")
 
                     if pending_all:
                         pending_options = {
