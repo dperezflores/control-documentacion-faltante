@@ -109,14 +109,32 @@ class AppState:
             st.stop()
 
     def persist(self, mutator: Callable[[bytes], bytes], message: str) -> bytes:
-        updated = self.store.mutate(DATA_FILE, mutator, message)
+        cached_content = self.session.get("operational_bytes")
+        cached_version = self.session.get("operational_version")
+
+        try:
+            updated = self.store.mutate(
+                DATA_FILE,
+                mutator,
+                message,
+                cached_content=cached_content,
+                cached_version=cached_version,
+            )
+        except TypeError as exc:
+            # Compatibilidad con stores externos/anteriores cuya firma de
+            # mutate() todavía no acepte los parámetros de caché.
+            if "cached_content" not in str(exc) and "cached_version" not in str(exc):
+                raise
+            updated = self.store.mutate(DATA_FILE, mutator, message)
+
         self.session.operational_bytes = updated
         self.session.operational_version_checked_at = monotonic()
 
-        # mutate() ya escribió estos bytes como la versión más reciente.
-        # No hacemos otra llamada HTTP aquí. Al vencer el intervalo de 20 s,
-        # la siguiente verificación remota volverá a sincronizar la versión.
-        self.session.pop("operational_version", None)
+        written_version = getattr(self.store, "last_mutation_version", None)
+        if written_version:
+            self.session.operational_version = written_version
+        else:
+            self.session.pop("operational_version", None)
         return updated
 
     def initialize_files(self, operational: bytes, catalog: bytes) -> None:
