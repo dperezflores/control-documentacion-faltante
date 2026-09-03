@@ -97,31 +97,32 @@ class GoogleDriveFileStore:
         path: str,
         mutator: Callable[[bytes], bytes],
         message: str,
+        cached_content: bytes | None = None,
+        cached_version: str | None = None,
     ) -> bytes:
         file_id = self._file_id(path)
         last_error: Exception | None = None
+        cache_is_trusted = cached_content is not None and cached_version is not None
+        self.last_mutation_version: str | None = None
 
         # El lock serializa escrituras simultáneas dentro de la instancia
         # Streamlit. El ETag añade protección frente a cambios externos.
         with _WRITE_LOCK:
             for _ in range(4):
-                metadata_response = self.session.get(
-                    f"{self.api_base}/{file_id}",
-                    params={"fields": "id,name,version,modifiedTime"},
-                    timeout=30,
-                )
-                if metadata_response.status_code == 404:
-                    raise FileNotFoundError(path)
-                metadata_response.raise_for_status()
-                etag = metadata_response.headers.get("ETag")
+                etag, remote_version = self._metadata(file_id)
 
-                download = self.session.get(
-                    f"{self.api_base}/{file_id}",
-                    params={"alt": "media"},
-                    timeout=60,
-                )
-                download.raise_for_status()
-                updated = mutator(download.content)
+                if cache_is_trusted and remote_version == cached_version:
+                    current_content = cached_content
+                else:
+                    download = self.session.get(
+                        f"{self.api_base}/{file_id}",
+                        params={"alt": "media"},
+                        timeout=60,
+                    )
+                    download.raise_for_status()
+                    current_content = download.content
+
+                updated = mutator(current_content)
 
                 headers = {
                     "Content-Type": (
@@ -134,19 +135,30 @@ class GoogleDriveFileStore:
 
                 upload = self.session.patch(
                     f"{self.upload_base}/{file_id}",
-                    params={"uploadType": "media"},
+                    params={
+                        "uploadType": "media",
+                        "fields": "id,version,modifiedTime,md5Checksum",
+                    },
                     headers=headers,
                     data=updated,
                     timeout=120,
                 )
 
                 if upload.status_code in (200, 201):
+                    payload = upload.json() if upload.content else {}
+                    self.last_mutation_version = "|".join(
+                        str(payload.get(key) or "")
+                        for key in ("modifiedTime", "md5Checksum", "version")
+                    )
                     return updated
                 if upload.status_code in (409, 412):
                     last_error = StorageConflict(
                         "El Excel cambió mientras se guardaba. "
                         "La aplicación volvió a leer la versión más reciente."
                     )
+                    # Después del primer conflicto, la copia local deja de ser
+                    # confiable durante el resto de esta llamada.
+                    cache_is_trusted = False
                     continue
 
                 upload.raise_for_status()
