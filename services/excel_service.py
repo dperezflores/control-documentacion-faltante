@@ -183,7 +183,13 @@ def _technical_docs_for_contract(wb, requirement: str, contract: str) -> list[st
     return docs
 
 
-def _write_visible_cell(wb, requirement: str, contract: str, manual_docs: list[str]) -> None:
+def _write_visible_cell(
+    wb,
+    requirement: str,
+    contract: str,
+    manual_docs: list[str],
+    raise_if_missing: bool = True,
+) -> None:
     visible_ws = wb[requirement]
     target_row = None
     for r in range(8, visible_ws.max_row + 1):
@@ -191,7 +197,9 @@ def _write_visible_cell(wb, requirement: str, contract: str, manual_docs: list[s
             target_row = r
             break
     if target_row is None:
-        raise ValueError("No se encontró el contrato en la hoja seleccionada.")
+        if raise_if_missing:
+            raise ValueError("No se encontró el contrato en la hoja seleccionada.")
+        return
 
     technical_docs = _technical_docs_for_contract(wb, requirement, contract)
     combined = list(dict.fromkeys([*manual_docs, *technical_docs]))
@@ -595,6 +603,7 @@ def delete_pending_records(data: bytes, requirement: str, record_ids: Iterable[s
             requirement,
             contract,
             manual_by_contract.get(contract, []),
+            raise_if_missing=False,
         )
     return _save(wb)
 
