@@ -200,7 +200,8 @@ class CapturaFaltantesView(BaseView):
                 def mutation(latest: bytes) -> bytes:
                     return add_faltantes(
                         latest, requirement, contract["contrato"], procedure,
-                        auditor_for_save, selected_items
+                        auditor_for_save, selected_items,
+                        contract_row=contract["row"],
                     )
 
                 try:
