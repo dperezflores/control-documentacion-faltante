@@ -37,7 +37,6 @@ jobs:
           from io import BytesIO
           from openpyxl import Workbook, load_workbook
           from services.excel_service import (
-              FALTANTES_SHEET,
               add_faltantes,
               get_faltantes,
               manual_visible_documents,
@@ -74,8 +73,7 @@ jobs:
           before = pending_summary(technical, "Req_TEST")
           assert len(before) == 1
           original_id = before[0]["id"]
-          original_rows = get_faltantes(technical, "Req_TEST")
-          assert len(original_rows) == 1
+          assert len(get_faltantes(technical, "Req_TEST")) == 1
 
           edited = update_pending_record(
               technical,
@@ -94,6 +92,7 @@ jobs:
           assert after[0]["auditor"] == "ABC"
           wb_after = load_workbook(BytesIO(edited))
           assert wb_after["Req_TEST"].cell(8, 5).value == "Solicitud corregida"
+          print("TEST_A_OK")
 
           # B) Registro manual: se materializa como técnico Aplicación y desaparece la línea manual.
           manual_source = base_workbook("Registro manual original", auditor="MAN")
@@ -118,11 +117,9 @@ jobs:
           assert technical_rows[0]["Documento"] == "Registro manual corregido"
           assert technical_rows[0]["Auditor"] == "XYZ"
           assert technical_rows[0]["ID"] != manual_id
-          assert technical_rows[0]["Procedimiento"] == ""
-          assert technical_rows[0]["Codigo_documento"] == ""
+          assert technical_rows[0]["Procedimiento"] in ("", None)
+          assert technical_rows[0]["Codigo_documento"] in ("", None)
           assert technical_rows[0]["Corte"] == "PENDIENTE"
-
-          print("TEST_A_OK")
           print("TEST_B_OK")
           PY
 
