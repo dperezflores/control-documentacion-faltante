@@ -583,26 +583,24 @@ class CortesView(BaseView):
                 cols[5].write(fecha_text)
 
                 with cols[6]:
-                    edit_col, delete_col = st.columns(2)
                     row_requirement = row.get("requerimiento")
-                    if edit_col.button(
-                        "✏️",
-                        key=f"edit_pending_all_{idx}_{row['id']}",
-                        use_container_width=True,
-                        help="Editar",
-                    ):
-                        self._show_edit_pending_dialog(
-                            row,
-                            row_requirement,
-                            "all",
-                        )
-                    if delete_col.button(
-                        "🗑️",
-                        key=f"delete_pending_all_{idx}_{row['id']}",
-                        use_container_width=True,
-                        help="Eliminar",
-                    ):
-                        st.session_state["pending_delete_confirm_all"] = row["id"]
+                    with st.popover("⋮", use_container_width=True):
+                        if st.button(
+                            "✏️ Editar",
+                            key=f"edit_pending_all_{idx}_{row['id']}",
+                            use_container_width=True,
+                        ):
+                            self._show_edit_pending_dialog(
+                                row,
+                                row_requirement,
+                                "all",
+                            )
+                        if st.button(
+                            "🗑️ Eliminar",
+                            key=f"delete_pending_all_{idx}_{row['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["pending_delete_confirm_all"] = row["id"]
 
                 if st.session_state.get("pending_delete_confirm_all") == row["id"]:
                     st.warning(
@@ -871,25 +869,23 @@ class CortesView(BaseView):
                 cols[5].write(fecha_text)
 
                 with cols[6]:
-                    edit_col, delete_col = st.columns(2)
-                    if edit_col.button(
-                        "✏️",
-                        key=f"edit_pending_{idx}_{row['id']}",
-                        use_container_width=True,
-                        help="Editar",
-                    ):
-                        self._show_edit_pending_dialog(
-                            row,
-                            requirement,
-                            "individual",
-                        )
-                    if delete_col.button(
-                        "🗑️",
-                        key=f"delete_pending_{idx}_{row['id']}",
-                        use_container_width=True,
-                        help="Eliminar",
-                    ):
-                        st.session_state["pending_delete_confirm"] = row["id"]
+                    with st.popover("⋮", use_container_width=True):
+                        if st.button(
+                            "✏️ Editar",
+                            key=f"edit_pending_{idx}_{row['id']}",
+                            use_container_width=True,
+                        ):
+                            self._show_edit_pending_dialog(
+                                row,
+                                requirement,
+                                "individual",
+                            )
+                        if st.button(
+                            "🗑️ Eliminar",
+                            key=f"delete_pending_{idx}_{row['id']}",
+                            use_container_width=True,
+                        ):
+                            st.session_state["pending_delete_confirm"] = row["id"]
 
                 if st.session_state.get("pending_delete_confirm") == row["id"]:
                     st.warning(
