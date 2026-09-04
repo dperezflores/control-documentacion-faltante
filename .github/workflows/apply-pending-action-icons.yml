@@ -1,0 +1,51 @@
+name: Apply pending action icons
+
+on:
+  push:
+    branches:
+      - iconos-editar-eliminar-pendientes
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: iconos-editar-eliminar-pendientes
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply patch
+        run: python tools/patch_pending_action_icons.py
+
+      - name: Syntax check
+        run: python -m py_compile views.py
+
+      - name: Verify only requested buttons changed
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('views.py').read_text(encoding='utf-8')
+          assert '"✏️",\n                        key=f"edit_pending_all_' in text
+          assert '"🗑️",\n                        key=f"delete_pending_all_' in text
+          assert '"✏️",\n                        key=f"edit_pending_{idx}_' in text
+          assert '"🗑️",\n                        key=f"delete_pending_{idx}_' in text
+          assert text.count('help="Editar"') >= 2
+          assert text.count('help="Eliminar"') >= 2
+          print('VERIFY_OK')
+          PY
+
+      - name: Commit change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add views.py
+          git commit -m "Usar iconos en acciones de pendientes"
+          git push origin iconos-editar-eliminar-pendientes
