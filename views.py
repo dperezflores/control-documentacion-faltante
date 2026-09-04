@@ -15,6 +15,7 @@ from services.excel_service import (
     delete_general_cut,
     delete_pending_records,
     document_history,
+    update_pending_record,
     documents_for_cuts,
     general_cut_details,
     list_contracts,
@@ -267,6 +268,70 @@ class CortesView(BaseView):
             self.state.session[cache_key] = cached
         return cached["details"]
 
+    def _show_edit_pending_dialog(
+        self,
+        row: dict,
+        requirement: str,
+        key_prefix: str,
+    ) -> None:
+        record_id = str(row["id"])
+        document_key = f"_edit_pending_document_{key_prefix}_{record_id}"
+        auditor_key = f"_edit_pending_auditor_{key_prefix}_{record_id}"
+
+        @st.dialog("Editar registro pendiente")
+        def edit_pending():
+            new_document = st.text_area(
+                "Solicitud",
+                value=str(row.get("solicitud") or ""),
+                key=document_key,
+            ).strip()
+            new_auditor = st.text_input(
+                "Auditor",
+                value=str(row.get("auditor") or ""),
+                key=auditor_key,
+            ).strip()
+
+            c_save, c_cancel = st.columns(2)
+            if c_save.button(
+                "Guardar cambios",
+                key=f"_save_edit_pending_{key_prefix}_{record_id}",
+                type="primary",
+            ):
+                if not new_document or not new_auditor:
+                    st.error("La solicitud y el auditor son obligatorios.")
+                    return
+                try:
+                    self.persist(
+                        lambda latest: update_pending_record(
+                            latest,
+                            requirement,
+                            row["id"],
+                            new_document,
+                            new_auditor,
+                        ),
+                        f"Editar faltante pendiente · {requirement}",
+                    )
+                    st.session_state.pop(document_key, None)
+                    st.session_state.pop(auditor_key, None)
+                    st.success("El registro pendiente fue actualizado.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"No fue posible actualizar el registro: {exc}")
+
+            if c_cancel.button(
+                "Cancelar",
+                key=f"_cancel_edit_pending_{key_prefix}_{record_id}",
+            ):
+                st.session_state.pop(document_key, None)
+                st.session_state.pop(auditor_key, None)
+                st.rerun()
+
+        # Si se vuelve a abrir el mismo registro después de cerrar el diálogo,
+        # se precargan nuevamente los valores actuales de la fila.
+        st.session_state.pop(document_key, None)
+        st.session_state.pop(auditor_key, None)
+        edit_pending()
+
     def _show_create_cut_dialog(self, cut_user: str, cut_date) -> None:
         requirement = self.requirement
 
@@ -517,12 +582,25 @@ class CortesView(BaseView):
                     fecha_text = "—"
                 cols[5].write(fecha_text)
 
-                if cols[6].button(
-                    "Eliminar",
-                    key=f"delete_pending_all_{idx}_{row['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state["pending_delete_confirm_all"] = row["id"]
+                with cols[6]:
+                    edit_col, delete_col = st.columns(2)
+                    row_requirement = row.get("requerimiento")
+                    if edit_col.button(
+                        "Editar",
+                        key=f"edit_pending_all_{idx}_{row['id']}",
+                        use_container_width=True,
+                    ):
+                        self._show_edit_pending_dialog(
+                            row,
+                            row_requirement,
+                            "all",
+                        )
+                    if delete_col.button(
+                        "Eliminar",
+                        key=f"delete_pending_all_{idx}_{row['id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["pending_delete_confirm_all"] = row["id"]
 
                 if st.session_state.get("pending_delete_confirm_all") == row["id"]:
                     st.warning(
@@ -790,12 +868,24 @@ class CortesView(BaseView):
                     fecha_text = "—"
                 cols[5].write(fecha_text)
 
-                if cols[6].button(
-                    "Eliminar",
-                    key=f"delete_pending_{idx}_{row['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state["pending_delete_confirm"] = row["id"]
+                with cols[6]:
+                    edit_col, delete_col = st.columns(2)
+                    if edit_col.button(
+                        "Editar",
+                        key=f"edit_pending_{idx}_{row['id']}",
+                        use_container_width=True,
+                    ):
+                        self._show_edit_pending_dialog(
+                            row,
+                            requirement,
+                            "individual",
+                        )
+                    if delete_col.button(
+                        "Eliminar",
+                        key=f"delete_pending_{idx}_{row['id']}",
+                        use_container_width=True,
+                    ):
+                        st.session_state["pending_delete_confirm"] = row["id"]
 
                 if st.session_state.get("pending_delete_confirm") == row["id"]:
                     st.warning(

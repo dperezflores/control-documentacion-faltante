@@ -608,6 +608,103 @@ def delete_pending_records(data: bytes, requirement: str, record_ids: Iterable[s
     return _save(wb)
 
 
+
+def update_pending_record(
+    data: bytes,
+    requirement: str,
+    record_id: str,
+    documento: str,
+    auditor: str,
+) -> bytes:
+    wb = _load(data)
+    _ensure_technical_sheets(wb)
+    tech = wb[FALTANTES_SHEET]
+    h = _headers(tech)
+    normalized_document = _normalize_single_line_text(documento)
+
+    # Primero buscar un pendiente técnico existente.
+    for r in range(2, tech.max_row + 1):
+        if (
+            tech.cell(r, h["Requerimiento"]).value == requirement
+            and str(tech.cell(r, h["ID"]).value) == str(record_id)
+            and str(tech.cell(r, h["Corte"]).value) == "PENDIENTE"
+        ):
+            contract = str(tech.cell(r, h["Contrato"]).value or "").strip()
+            old_effective = _effective_document(
+                tech.cell(r, h["Documento"]).value,
+                tech.cell(r, h["Especificacion"]).value if "Especificacion" in h else "",
+            )
+
+            tech.cell(r, h["Documento"]).value = normalized_document
+            if "Especificacion" in h:
+                tech.cell(r, h["Especificacion"]).value = ""
+            tech.cell(r, h["Auditor"]).value = auditor
+
+            # Retirar de la celda visible el texto técnico anterior antes de
+            # reconstruirla; de otro modo podría interpretarse como manual.
+            visible_ws = wb[requirement]
+            for visible_row in range(8, visible_ws.max_row + 1):
+                if str(visible_ws.cell(visible_row, 2).value or "").strip() != contract:
+                    continue
+                visible_docs = _split_visible_documents(
+                    visible_ws.cell(visible_row, 5).value or ""
+                )
+                visible_ws.cell(visible_row, 5).value = "\n".join(
+                    text for text in visible_docs if text != old_effective
+                )
+                break
+
+            _rebuild_visible_cell(wb, requirement, contract)
+            return _save(wb)
+
+    # Si no es técnico, puede ser un registro previo/manual que sólo existe
+    # en la celda visible. Al editarlo se materializa como registro técnico.
+    manual_rows = _manual_pending_rows_from_wb(wb, requirement)
+    manual = next(
+        (row for row in manual_rows if str(row["id"]) == str(record_id)),
+        None,
+    )
+    if manual is None:
+        raise ValueError(
+            "No se encontró el registro a editar; es posible que ya haya cambiado."
+        )
+
+    contract = manual["contrato"]
+    remaining_manual_docs = [
+        row["solicitud"]
+        for row in manual_rows
+        if row["contrato"] == contract and str(row["id"]) != str(record_id)
+    ]
+
+    row = [None] * tech.max_column
+    values = {
+        "ID": uuid4().hex,
+        "Requerimiento": requirement,
+        "Contrato": contract,
+        "Procedimiento": "",
+        "Codigo_documento": "",
+        "Documento": normalized_document,
+        "Especificacion": "",
+        "Fecha_deteccion": datetime.now(LOCAL_TZ).replace(
+            tzinfo=None, microsecond=0
+        ),
+        "Auditor": auditor,
+        "Corte": "PENDIENTE",
+        "Origen": "Aplicación",
+    }
+    for name, value in values.items():
+        row[h[name] - 1] = value
+    tech.append(row)
+
+    _write_visible_cell(
+        wb,
+        requirement,
+        contract,
+        remaining_manual_docs,
+    )
+    return _save(wb)
+
+
 def move_records_to_cut(data: bytes, requirement: str, record_ids: Iterable[str], cut_number: int) -> bytes:
     ids = {str(x) for x in record_ids}
     wb = _load(data)
