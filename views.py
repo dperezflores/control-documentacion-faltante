@@ -964,6 +964,20 @@ class GenerarOficioView(BaseView):
         requirement = self.requirement
         operational = self.operational
 
+        st.download_button(
+            "Descargar Excel actualizado",
+            data=operational,
+            file_name="Documentacion_faltante.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            on_click="ignore",
+            help=(
+                "Descarga la copia operativa actualmente sincronizada por la aplicación. "
+                "Para forzar una sincronización inmediata con cambios externos, usa "
+                "'Actualizar datos' en la barra lateral antes de descargar."
+            ),
+        )
+
         cuts = list_cuts(operational, requirement)
         if not cuts:
             st.info("Este requerimiento todavía no tiene cortes.")
